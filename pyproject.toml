@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "llm_asr_clarification"
+version = "0.1.0"
+description = "LLM ASR clarification thing"
+readme = "README.md"
+requires-python = ">=3.10"
+
+dependencies = [
+    "numpy",
+    "pandas",
+    "torch",
+    "importlib",
+    "argparse",
+    "sys",
+    "logging"
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
