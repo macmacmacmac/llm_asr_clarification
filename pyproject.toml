@@ -16,7 +16,8 @@ dependencies = [
     "importlib",
     "argparse",
     "sys",
-    "logging"
+    "logging",
+    "tqdm"
 ]
 
 [tool.setuptools.packages.find]
