@@ -1,7 +1,6 @@
 import os
 import argparse
-from llm_asr_clarification import get_logger #<------ trying to experiment with using loggers for saving results
-                                             #        more readable, and we dont need to use json files everywhere
+from llm_asr_clarification import get_logger
 
 # Driver Code
 def run(args_list=None):
