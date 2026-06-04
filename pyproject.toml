@@ -8,3 +8,23 @@ version = "0.1.0"
 description = "LLM ASR clarification thing"
 readme = "README.md"
 requires-python = ">=3.10"
+dependencies = [
+    "dotenv>=0.9.9",
+    "ipdb>=0.13.13",
+    "openai>=2.41.0",
+    "openai-whisper>=20250625",
+    "pyannote-audio>=4.0.4",
+    "qwen-asr>=0.0.6",
+    "soundfile>=0.13.1",
+    "torch>=2.11.0",
+]
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu128" }]
+torchvision = [{ index = "pytorch-cu128" }]
+torchaudio = [{ index = "pytorch-cu128" }]

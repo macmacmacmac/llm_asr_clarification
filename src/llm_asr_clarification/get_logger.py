@@ -25,7 +25,8 @@ def get_logger(exp_name: str):
     file_handler.setFormatter(logging.Formatter('%(levelname)s | %(name)s:\n%(message)s'))
     logger.addHandler(file_handler) 
 
-    # logger.propagate = False #stops torch and huggingface and shit from logging
+    # Stops the message from bubbling up to the root logger and printing twice
+    logger.propagate = False
 
     return logger
 
