@@ -3,8 +3,8 @@
 #SBATCH -n 8
 #SBATCH --mem=16g
 #SBATCH -J "WhisperLarge"
-#SBATCH -p short
-#SBATCH -t 1-00:00:00
+#SBATCH -p long
+#SBATCH -t 2-00:00:00
 #SBATCH --gres=gpu:1
 #SBATCH -C A100
 #SBATCH -o whisper_large.out
@@ -37,4 +37,4 @@ export PYTORCH_ALLOC_CONF=expandable_segments:True
 # -----------------------------
 # Run the Job (Example: Python Script / Module)
 # -----------------------------
-python run_scripts.py --scripts generate_transcripts --whisper-size large
+python run_scripts.py --scripts generate_diarized_transcripts --whisper-size large

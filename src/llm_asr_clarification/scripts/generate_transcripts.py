@@ -14,7 +14,7 @@ with logging_redirect_tqdm():
     def run(args_list=None):
         exp_name = os.path.basename(__file__)
         
-        # Perform CLI Argument Parsing=================================================
+        # Perform CLI Argument Parsing
         parser = argparse.ArgumentParser()
         parser.add_argument("--whisper-size", type=str, default="tiny")
         parser.add_argument("--dataset-path", type=str, default="./datasets/amicorpus")
@@ -59,7 +59,9 @@ with logging_redirect_tqdm():
 
             # Fetch the audio file path and transcribe it
             audio_file_path = [wav_file for wav_file in audio_folder.rglob("*.wav")][0]
-            result = model.transcribe(audio_file_path.as_posix())
+            result = model.transcribe(
+                audio = audio_file_path.as_posix()
+            )
 
             # Write the transcription to a file
             transcript_file_path = os.path.join(transcripts_folder, f"{WHISPER_SIZE}_transcript.txt")
