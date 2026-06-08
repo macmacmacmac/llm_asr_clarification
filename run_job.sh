@@ -2,13 +2,13 @@
 #SBATCH -N 1
 #SBATCH -n 8
 #SBATCH --mem=16g
-#SBATCH -J "QwenTranscribe"
-#SBATCH -p long
-#SBATCH -t 2-00:00:00
+#SBATCH -J "Transcribe"
+#SBATCH -p short
+#SBATCH -t 1-00:00:00
 #SBATCH --gres=gpu:1
 #SBATCH -C A100
-#SBATCH -o qwen.out
-#SBATCH -e qwen.out
+#SBATCH -o whisper_large_v3.out
+#SBATCH -e whisper_large_v3.out
 
 # -----------------------------
 # Load Required Modules
@@ -37,4 +37,4 @@ export PYTORCH_ALLOC_CONF=expandable_segments:True
 # -----------------------------
 # Run the Job (Example: Python Script / Module)
 # -----------------------------
-python run_scripts.py --scripts generate_qwen_transcripts
+python run_scripts.py --scripts generate_transcripts --model-name openai/whisper-large-v3
