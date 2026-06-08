@@ -13,8 +13,8 @@
 # -----------------------------
 # Load Required Modules
 # -----------------------------
-module load python/3.12.3
-module load cuda/12.9.0
+# module load python/3.12.3
+# module load cuda/12.9.0
 
 # -----------------------------
 # Create / Activate venv
