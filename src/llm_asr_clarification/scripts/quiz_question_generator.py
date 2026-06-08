@@ -1,7 +1,7 @@
 import os
 import argparse
 from llm_asr_clarification import get_logger, OpenAIWrapper
-from llm_asr_clarification.models.prompts import AMBIGUITY_PROMPT
+from llm_asr_clarification.models.prompts import QUIZ_QUESTION_GENERATOR_PROMPT
 import xml.etree.ElementTree as ET
 from tqdm.auto import tqdm
 import re
@@ -20,7 +20,7 @@ def run(args_list=None):
     parser.add_argument("--txt_file_to_do", type=str, default="large_transcript")
     parser.add_argument("--meeting_to_do", type=str, default="/group/jrwhitehill/amicorpus/ES2005d")
     parser.add_argument("--chunk_size", type=int, default=10)
-    
+
     args, _ = parser.parse_known_args(args_list)
 
     # Build the logger here
@@ -60,21 +60,11 @@ def run(args_list=None):
         meeting_paths = [entry.path for entry in os.scandir(args.ami_path) if 'ami_public_manual_1.6.2' not in entry.name]
     for meeting_path in tqdm(meeting_paths):
         file_todo_path = os.path.join(meeting_path, "transcripts", f"{args.txt_file_to_do}.txt")
-        output_preds_path = os.path.join(meeting_path, "transcripts", f"{args.txt_file_to_do}_ambiguity_preds.txt")
+        output_preds_path = os.path.join(meeting_path, "transcripts", f"{args.txt_file_to_do}_quiz_questions.txt")
         
         logger.info(f"I am doing this file: {file_todo_path}")
         
         chatgpt = OpenAIWrapper()
-
-        # TODO: open the text file at file_todo_path
-        # TODO: iterate through text chunks in chunks of let's say 5 sentences, 
-        #      run it through the ambiguity detection prompt
-        #       
-        #       this should return a dict-like object
-        #       {
-        #           "has_material_mistranscription": boolean
-        #       }
-        #       If that text chunk has mistranscription, it should be bolded
 
         # Read transcript
         with open(file_todo_path, "r", encoding="utf-8") as f:
@@ -82,13 +72,13 @@ def run(args_list=None):
 
         sentences = split_into_sentences(transcript_text)
 
-        markdown_chunks = []
+        questions = []
 
         for sentence_chunk in chunk_sentences(sentences, chunk_size=args.chunk_size):
 
             transcript_excerpt = " ".join(sentence_chunk)
 
-            prompt = AMBIGUITY_PROMPT.format(
+            prompt = QUIZ_QUESTION_GENERATOR_PROMPT.format(
                 transcript_excerpt=transcript_excerpt
             )
 
@@ -98,29 +88,21 @@ def run(args_list=None):
                 result = json.loads(response_text)
             except Exception:
                 logger.warning(
-                    f"Could not parse response. Defaulting to non-ambiguous.\n"
+                    f"Could not parse response. Defaulting to None.\n"
                     f"Response: {response_text}"
                 )
                 result = {
-                    "has_material_mistranscription": False
+                    "quiz_question": None
                 }
 
-            has_mistranscription = result.get(
-                "has_material_mistranscription",
-                False
-            )
+            if "quiz_question" in result:
+                questions.append(
+                    f"{result.get("quiz_question")}"
+                )
 
-            if has_mistranscription:
-                markdown_chunks.append(
-                    f"**{transcript_excerpt}**"
-                )
-            else:
-                markdown_chunks.append(
-                    transcript_excerpt
-                )
 
         with open(output_preds_path, "w", encoding="utf-8") as f:
-            f.write("\n\n".join(markdown_chunks))
+            f.write("\n\n".join(questions))
 
 
     
