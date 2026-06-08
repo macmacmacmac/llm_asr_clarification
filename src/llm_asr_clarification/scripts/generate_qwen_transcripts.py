@@ -33,7 +33,6 @@ with logging_redirect_tqdm():
         args, _ = parser.parse_known_args(args_list)
 
         # Parse CLI arguments to global variables
-        # WHISPER_SIZE = args.whisper_size
         QWEN_MODEL_NAME = args.qwen_model_name
         DATASET_PATH = Path(args.dataset_path)
 
