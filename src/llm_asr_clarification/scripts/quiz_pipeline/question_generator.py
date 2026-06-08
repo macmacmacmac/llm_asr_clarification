@@ -17,9 +17,9 @@ def run(args_list=None):
     parser.add_argument("--msg", type=str, default="example")
     # parser.add_argument("--ami_path", type=str, default="./datasets/amicorpus")
     parser.add_argument("--ami_path", type=str, default="/group/jrwhitehill/amicorpus")
-    parser.add_argument("--txt_file_to_do", type=str, default="large_transcript")
+    parser.add_argument("--question_file", type=str, default="parsed_gt")
     parser.add_argument("--meeting_to_do", type=str, default="/group/jrwhitehill/amicorpus/ES2005d")
-    parser.add_argument("--chunk_size", type=int, default=10)
+    parser.add_argument("--num_questions", type=int, default=10)
 
     args, _ = parser.parse_known_args(args_list)
 
@@ -59,8 +59,8 @@ def run(args_list=None):
     else:
         meeting_paths = [entry.path for entry in os.scandir(args.ami_path) if 'ami_public_manual_1.6.2' not in entry.name]
     for meeting_path in tqdm(meeting_paths):
-        file_todo_path = os.path.join(meeting_path, "transcripts", f"{args.txt_file_to_do}.txt")
-        output_preds_path = os.path.join(meeting_path, "transcripts", f"{args.txt_file_to_do}_quiz_questions.txt")
+        file_todo_path = os.path.join(meeting_path, "transcripts", f"{args.question_file}.txt")
+        output_preds_path = os.path.join(meeting_path, "transcripts", f"quiz_from_{args.question_file}.json")
         
         logger.info(f"I am doing this file: {file_todo_path}")
         
@@ -70,39 +70,54 @@ def run(args_list=None):
         with open(file_todo_path, "r", encoding="utf-8") as f:
             transcript_text = f.read()
 
-        sentences = split_into_sentences(transcript_text)
+        prompt = QUIZ_QUESTION_GENERATOR_PROMPT.format(
+            transcript=transcript_text,
+            num_questions=args.num_questions
+        )
 
-        questions = []
+        response_text = chatgpt.prompt_chatgpt(prompt, max_tokens=1024)
 
-        for sentence_chunk in chunk_sentences(sentences, chunk_size=args.chunk_size):
-
-            transcript_excerpt = " ".join(sentence_chunk)
-
-            prompt = QUIZ_QUESTION_GENERATOR_PROMPT.format(
-                transcript_excerpt=transcript_excerpt
+        try:
+            result = json.loads(response_text)
+        except Exception:
+            logger.warning(
+                f"Could not parse response. Defaulting to None.\n"
+                f"Response: {response_text}"
             )
+            result = {
+                "quiz_questions": None,
+                "correct_answers": None
+            }
 
-            response_text = chatgpt.prompt_chatgpt(prompt)
+        try: 
+            questions = result.get("quiz_questions", None)
+            answers = result.get("correct_answers", None)
+            
+            assert questions is not None
+            assert answers is not None
+            assert (len(questions) == args.num_questions)
+            assert (len(answers) == args.num_questions)
 
-            try:
-                result = json.loads(response_text)
-            except Exception:
-                logger.warning(
-                    f"Could not parse response. Defaulting to None.\n"
-                    f"Response: {response_text}"
-                )
-                result = {
-                    "quiz_question": None
-                }
+            data = [
+                {
+                    "question" : q,
+                    "correct_answer": a
+                } for q,a in zip(questions, answers)
+            ]
+            with open(output_preds_path, "w", encoding="utf-8") as f:
+                f.write(json.dumps(data, indent=4))
+        except AssertionError as e:
+            logger.error(str(e))
+            # f.write("\n\n".join(data))
 
-            if "quiz_question" in result:
-                questions.append(
-                    f"{result.get("quiz_question")}"
-                )
+            # data = [f"Question: {q}\nCorrect Answer: {a}" for q,a in zip(questions, answers)]
 
+        # except Exception:
+        #     logger.warning(
+        #         f"Could not build response. Probably differing number of questions and answers\n"
+        #         f"Questions len: {len(questions)}, Answers len: {len(answers)}"
+        #     )
 
-        with open(output_preds_path, "w", encoding="utf-8") as f:
-            f.write("\n\n".join(questions))
 
 
     
