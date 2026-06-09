@@ -17,6 +17,7 @@ dependencies = [
     "pyannote-audio>=4.0.4",
     "qwen-asr>=0.0.6",
     "soundfile>=0.13.1",
+    "speechbrain>=1.1.0",
     "torch>=2.11.0",
     "transformers>=4.57.6",
 ]
