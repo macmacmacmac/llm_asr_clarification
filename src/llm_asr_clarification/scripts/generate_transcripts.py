@@ -171,7 +171,7 @@ with logging_redirect_tqdm():
             # Get Speech timestamps
             speech_timestamps = get_speech_timestamps(wav_tensor, vad_model, sampling_rate=sample_rate)
 
-            # Merge speech timestamps together into LLM-friednly chunks
+            # Merge speech timestamps together into LLM-friendly chunks
             merged_timestamps = merge_timestamps(speech_timestamps, sample_rate)
             
             
