@@ -3,188 +3,207 @@ import argparse
 from llm_asr_clarification import get_logger
 import whisper
 import torch
-from dotenv import load_dotenv
-from pyannote.audio import Pipeline
-import warnings
 from pathlib import Path
 from tqdm import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
+from speechbrain.inference.speaker import EncoderClassifier
+import torch.nn.functional as F
+import ipdb
 
-# Suppress the broken torchcodec import warning from pyannote
-warnings.filterwarnings("ignore", message=".*torchcodec is not installed correctly.*")
+SAMPLING_RATE = 16_000
 
-# Resolve the Pyannote TF32 reproducibility warning by explicitly configuring torch
-torch.backends.cuda.matmul.allow_tf32 = True
-torch.backends.cudnn.allow_tf32 = True
-
-# Load all env variables
-load_dotenv()
-
-# Wrap logging with tqdm
-with logging_redirect_tqdm():
-
-    # Driver Code
-    def run(args_list=None):
-        exp_name = os.path.basename(__file__)
+# ┌───────────────────────────────────────────────┐
+# │                 HELPER METHODS                │
+# └───────────────────────────────────────────────┘
+def extract_enrollment_embedding(audio_path, classifier, device):
+    """
+    Loads an individual headset file and extracts a 30-second 
+    voice print to act as the reference embedding for this speaker.
+    """
+    audio_np = whisper.load_audio(audio_path.as_posix())
+    waveform = torch.from_numpy(audio_np).unsqueeze(0).to(device)
+    
+    # Take a 30-second slice starting at the 1-minute mark 
+    # to avoid the initial silence of the meeting setup
+    start_frame = SAMPLING_RATE * 60 
+    end_frame = start_frame + (SAMPLING_RATE * 30)
+    
+    # Fallback if the file is very short
+    if waveform.shape[1] < end_frame:
+        chunk = waveform
+    else:
+        chunk = waveform[:, start_frame:end_frame]
         
-        # Perform CLI Argument Parsing
-        parser = argparse.ArgumentParser()
-        parser.add_argument("--whisper-size", type=str, default="tiny")
-        parser.add_argument("--dataset-path", type=str, default="./datasets/amicorpus")
-        # parser.add_argument("--audio-path", type=str, default="./datasets/amicorpus/ES2005a/audio/ES2005a.Mix-Headset.wav")
-
-        args, _ = parser.parse_known_args(args_list)
-
-        # Parse CLI arguments to global variables
-        WHISPER_SIZE = args.whisper_size
-        # AUDIO_PATH = args.audio_path
-        DATASET_PATH = Path(args.dataset_path)
-
-        # Other Global Variables
-        DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-        HF_TOKEN = os.getenv("HF_TOKEN")
+    with torch.no_grad():
+        emb = classifier.encode_batch(chunk)
         
-        # Init Logger
-        logger = get_logger(exp_name)    
-        logger.info(
-            f"{"="*100}\n\t\t\t\tRunning script: {exp_name}\n{"="*100}"
-        )
-
-        # Log received args
-        received_args_log = ""
-        for arg, value in vars(args).items():
-            received_args_log += f"|---> {arg}: {value}\n"
-        logger.info(
-            f"Received the following arguments:\n{received_args_log}"
-        )
-        
-        # Log important variables
-        logger.info(f"Target device for model: {DEVICE}")
+    # Squeeze out the batch dimensions so it's a flat vector
+    return emb.squeeze()
 
 
-        # ┌───────────────────────────────────────────────┐
-        # │                  LOAD MODELS                  │
-        # └───────────────────────────────────────────────┘
-        logger.info("Loading Whisper Model...")
-        model = whisper.load_model(WHISPER_SIZE).to(DEVICE)
-        
-        logger.info("Loading Pyannote Diarization Pipeline...")
-        diarization_pipeline = Pipeline.from_pretrained(
-            "pyannote/speaker-diarization-3.1",
-            token=HF_TOKEN
-        )
-        # Pyannote handles device placement slightly differently
-        diarization_pipeline.to(torch.device(DEVICE))
+# Driver Code
+def run(args_list=None):
+    exp_name = os.path.basename(__file__)
+    
+    # Perform CLI Argument Parsing
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--whisper-size", type=str, default="tiny")
+    parser.add_argument("--dataset-path", type=str, default="./datasets/amicorpus")
+    parser.add_argument("--seed", type=int, default=47)
+    
+    args, _ = parser.parse_known_args(args_list)
 
+    # Parse CLI arguments to global variables
+    WHISPER_SIZE = args.whisper_size
+    DATASET_PATH = Path(args.dataset_path)
 
-        # Fetch all dataset meeting folders
-        meeting_folders = [meeting_folder for meeting_folder in DATASET_PATH.iterdir() if (meeting_folder.is_dir() and meeting_folder.name != "ami_public_manual_1.6.2")]
+    # Other Global Variables
+    DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
+    MIN_FRAMES = SAMPLING_RATE
+    
+    # Init Logger
+    logger = get_logger(exp_name)    
+    logger.info(f"{'='*100}\n\t\t\t\tRunning script: {exp_name}\n{'='*100}")
+
+    # Log received args
+    received_args_log = ""
+    for arg, value in vars(args).items():
+        received_args_log += f"|---> {arg}: {value}\n"
+    logger.info(
+        f"Received the following arguments:\n{received_args_log}"
+    )
+    
+    # Log important variables
+    logger.info(f"Target device for model: {DEVICE}")
+
+    # ┌───────────────────────────────────────────────┐
+    # │                  LOAD MODELS                  │
+    # └───────────────────────────────────────────────┘
+    logger.info("Loading Whisper Model...")
+    model = whisper.load_model(WHISPER_SIZE).to(DEVICE)
+
+    logger.info("Loading SpeechBrain ECAPA-TDNN Model...")
+    speaker_classifier = EncoderClassifier.from_hparams(
+        source="speechbrain/spkrec-ecapa-voxceleb",
+        run_opts={"device": DEVICE}
+    )
+
+    # ┌───────────────────────────────────────────────┐
+    # │                   LOAD DATA                   │
+    # └───────────────────────────────────────────────┘
+    # Fetch all dataset meeting folders
+    meeting_folders = [f for f in DATASET_PATH.iterdir() 
+                        if (f.is_dir() and 
+                            f.name not in ["ami_public_manual_1.6.2", "xinlu_data"])]
+
+    # Wrap logging with tqdm
+    with logging_redirect_tqdm(loggers=[logger]):
 
         # Process all Meeting Folders
-        for meeting_folder in tqdm(meeting_folders):
+        for meeting_folder in tqdm(meeting_folders, desc="Processing Meetings"):
+            logger.info(f"Processing meeting {meeting_folder.name}")
 
             # Prep audio and transcript folders
             audio_folder = meeting_folder / "audio"
             transcripts_folder = meeting_folder / "transcripts"
 
-            # Fetch the audio file path and transcribe it
-            audio_file_path = [wav_file for wav_file in audio_folder.rglob("*.wav")][0]
+            # Fetch all wav files
+            all_wavs = list(audio_folder.rglob("*.wav"))
+            
+            # Separate the Mix from the individual Headsets
+            mix_file_path = [f for f in all_wavs if "Mix-Headset" in f.name][0]
+            headset_files = [f for f in all_wavs if "Mix-Headset" not in f.name and "Headset" in f.name]
+
 
             # ┌───────────────────────────────────────────────┐
-            # │     PERFORM DIARIZATION AND TRANSCRIPTION     │
+            # │               SPEAKER ENROLLMENT              │
             # └───────────────────────────────────────────────┘
-            logger.info("Loading audio into memory using Whisper's ffmpeg utility...")
+            logger.info(f"Extracting enrollment embeddings for {len(headset_files)} speakers...")
+            enrolled_profiles = {}
+            
+            for headset_file in headset_files:
+                # Use the filename (e.g., "ES2005a.Headset-0") as the speaker label
+                speaker_id = headset_file.stem.split('.')[-1] 
                 
-            # This loads the audio as a float32 mono numpy array sampled at whisper.audio.SAMPLE_RATE
-            audio_np = whisper.load_audio(audio_file_path.as_posix())
+                enrolled_profiles[speaker_id] = extract_enrollment_embedding(
+                    headset_file, 
+                    speaker_classifier, 
+                    DEVICE
+                )
+
+            # ┌───────────────────────────────────────────────┐
+            # │                 TRANSCRIPTION                 │
+            # └───────────────────────────────────────────────┘
+            logger.info("Running Whisper Transcription on the Mixed Audio...")
+            audio_np = whisper.load_audio(mix_file_path.as_posix())
+            waveform = torch.from_numpy(audio_np).unsqueeze(0).to(DEVICE)
             
-            # Convert to a PyTorch Tensor and add a channel dimension: shape (1, num_samples)
-            waveform = torch.from_numpy(audio_np).unsqueeze(0)
-            
-            # Create the dictionary that Pyannote accepts
-            audio_in_memory = {
-                "waveform": waveform, 
-                "sample_rate": whisper.audio.SAMPLE_RATE
-            }
-
-            logger.info("Running Pyannote Diarization...")
-
-            # Pass the dictionary INSTEAD of the AUDIO_PATH string
-            diarization = diarization_pipeline(
-                audio_in_memory,
-                num_speakers = 4
-            )
-
-            logger.info("Running Whisper Transcription...")
-
-            # Pass the pre-loaded numpy array to prevent Whisper from re-reading the file
             result = model.transcribe(audio=audio_np)
             whisper_segments = result["segments"]
-            
 
 
             # ┌───────────────────────────────────────────────┐
-            # │        ALIGN SPEAKERS WITH TRANSCRIPTS        │
+            # │          CLASSIFY SEGMENTS VIA ECAPA          │
             # └───────────────────────────────────────────────┘
-            logger.info("Aligning transcripts with speakers...")
+            logger.info("Classifying speaker for each transcribed segment...")
             speaker_separated_data = []
+
+            # Keep track of the last successfully identified speaker
+            last_valid_speaker = "UNKNOWN"
 
             for segment in whisper_segments:
                 seg_start = segment["start"]
                 seg_end = segment["end"]
                 text = segment["text"].strip()
                 
-                # Find the speaker with the maximum overlap for this segment
-                max_overlap = 0
-                best_speaker = "UNKNOWN_SPEAKER"
+                start_frame = int(seg_start * SAMPLING_RATE)
+                end_frame = int(seg_end * SAMPLING_RATE)
 
-                # ipdb.set_trace()
+                # Get the current chunk based on start and end frame
+                chunk_tensor = waveform[:, start_frame: end_frame]
+
+                if chunk_tensor.shape[1] < SAMPLING_RATE:
+                    best_speaker = last_valid_speaker
                 
-                for turn, speaker_literal, speaker in diarization.speaker_diarization.itertracks(yield_label=True):
+                else:
 
-                    # ipdb.set_trace()
-
-                    # Calculate the intersection of the two time windows
-                    overlap = max(0, min(seg_end, turn.end) - max(seg_start, turn.start))
+                    with torch.no_grad():
+                        chunk_emb = speaker_classifier.encode_batch(chunk_tensor).squeeze()
                     
-                    if overlap > max_overlap:
-                        max_overlap = overlap
-                        best_speaker = speaker
-                
-                # Format the output line
-                # line = f"[{seg_start:05.2f} - {seg_end:05.2f}] {best_speaker}: {text}"
-                # line = f"[{best_speaker}]: {text}\n"
+                    best_speaker = "UNKNOWN"
+                    highest_sim = -1.0
+                    
+                    # Compare this phrase against all enrolled profiles using Cosine Similarity
+                    for speaker_name, profile_emb in enrolled_profiles.items():
+                        sim = F.cosine_similarity(chunk_emb, profile_emb, dim=0).item()
+                        if sim > highest_sim:
+                            highest_sim = sim
+                            best_speaker = speaker_name
 
+                    if best_speaker != "UNKNOWN":
+                        last_valid_speaker = best_speaker
+                
                 speaker_separated_data.append((best_speaker, text))
 
-
-            # Merge speakers
-            diarized_lines = []
-            last_speaker = speaker_separated_data[0][0]
-            combined_text = speaker_separated_data[0][1]
-            for i in range(1, len(speaker_separated_data)):
-                current_speaker = speaker_separated_data[i][0]
-                text = speaker_separated_data[i][1]
-
-                if current_speaker == last_speaker:
-                    combined_text += text
-                else:
-                    # Save last speaker's stuff
-                    diarized_lines.append(f"[{last_speaker}]: {combined_text}\n")
-
-                    # Make current speaker as last speaker
-                    last_speaker = current_speaker
-                    combined_text = text
-
-            diarized_lines.append(f"[{last_speaker}]: {combined_text}\n")
-            
-
             # ┌───────────────────────────────────────────────┐
-            # │                  SAVE OUTPUT                  │
+            # │                FORMAT & SAVE                  │
             # └───────────────────────────────────────────────┘
+            diarized_lines = []
+            if speaker_separated_data:
+                last_speaker, combined_text = speaker_separated_data[0]
+                
+                for current_speaker, text in speaker_separated_data[1:]:
+                    if current_speaker == last_speaker:
+                        combined_text += " " + text
+                    else:
+                        diarized_lines.append(f"[{last_speaker}]: {combined_text.strip()}\n")
+                        last_speaker = current_speaker
+                        combined_text = text
+
+                diarized_lines.append(f"[{last_speaker}]: {combined_text.strip()}\n")
+
             transcript_file_path = os.path.join(transcripts_folder, f"whisper_{WHISPER_SIZE}_diarized_transcript.txt")
             with open(transcript_file_path, "w", encoding="utf-8") as f:
-                f.write("\n".join(diarized_lines))
+                f.write("".join(diarized_lines))
                 
-            logger.info(f"Saved transcript for {transcript_file_path}")
-
+            logger.info(f"Saved transcript for {transcript_file_path}\n\n")
