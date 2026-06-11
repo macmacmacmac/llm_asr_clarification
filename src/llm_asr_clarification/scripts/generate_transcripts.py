@@ -73,7 +73,7 @@ with logging_redirect_tqdm():
         
         # Perform CLI Argument Parsing
         parser = argparse.ArgumentParser()
-        parser.add_argument("--model-name", type=str, default="openai/whisper-large-v3")
+        parser.add_argument("--model-name", type=str, default="openai/whisper-tiny")
         parser.add_argument("--dataset-path", type=str, default="./datasets/amicorpus")
 
         args, _ = parser.parse_known_args(args_list)

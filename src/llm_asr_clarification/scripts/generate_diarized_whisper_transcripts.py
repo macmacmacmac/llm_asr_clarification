@@ -15,30 +15,52 @@ SAMPLING_RATE = 16_000
 # ┌───────────────────────────────────────────────┐
 # │                 HELPER METHODS                │
 # └───────────────────────────────────────────────┘
-def extract_enrollment_embedding(audio_path, classifier, device):
+def extract_enrollment_embedding(
+        audio_path, 
+        classifier, 
+        vad_model, 
+        get_speech_timestamps, 
+        device,
+        target_duration_sec = 30.0
+    ):
     """
-    Loads an individual headset file and extracts a 30-second 
-    voice print to act as the reference embedding for this speaker.
+    Extracts a reference embedding by using VAD (Voice Activity Detection) to find and concatenate 
+    pure speech segments, ignoring all silence and background noise.
     """
     audio_np = whisper.load_audio(audio_path.as_posix())
     waveform = torch.from_numpy(audio_np).unsqueeze(0).to(device)
-    
-    # Take a 30-second slice starting at the 1-minute mark 
-    # to avoid the initial silence of the meeting setup
-    start_frame = SAMPLING_RATE * 60 
-    end_frame = start_frame + (SAMPLING_RATE * 30)
-    
-    # Fallback if the file is very short
-    if waveform.shape[1] < end_frame:
-        chunk = waveform
-    else:
-        chunk = waveform[:, start_frame:end_frame]
-        
+
+    # Get Speech Timestamps using VAD model
+    wav_tensor = waveform.squeeze(0)
+    speech_timestamps = get_speech_timestamps(wav_tensor, vad_model, sampling_rate = SAMPLING_RATE)
+
+    # Collect speech chunks until we hit target duration
+    speech_chunks = []
+    collected_frames = 0
+    target_frames = int(target_duration_sec * SAMPLING_RATE)
+
+    # Keep collecting speech chunks until we hit target frames
+    for segment in speech_timestamps:
+        start = segment["start"]
+        end = segment["end"]
+        chunk = waveform[:, start:end]
+        speech_chunks.append(chunk)
+
+        collected_frames += (end - start)
+        if collected_frames >= target_frames:
+            break
+
+    # Concatenate speech chunks into a block of continuous speech
+    combined_speech = torch.cat(speech_chunks, dim = 1)
+
+    # Trim combined speech chunk so its always target_duration_sec long
+    combined_speech = combined_speech[:, :target_frames]
+
     with torch.no_grad():
-        emb = classifier.encode_batch(chunk)
-        
-    # Squeeze out the batch dimensions so it's a flat vector
+        emb = classifier.encode_batch(combined_speech)
+    
     return emb.squeeze()
+
 
 
 # Driver Code
@@ -49,6 +71,7 @@ def run(args_list=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("--whisper-size", type=str, default="tiny")
     parser.add_argument("--dataset-path", type=str, default="./datasets/amicorpus")
+    parser.add_argument("--meeting-path", type=str, default="./datasets/amicorpus/TS3011d")
     parser.add_argument("--seed", type=int, default=47)
     
     args, _ = parser.parse_known_args(args_list)
@@ -59,7 +82,6 @@ def run(args_list=None):
 
     # Other Global Variables
     DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
-    MIN_FRAMES = SAMPLING_RATE
     
     # Init Logger
     logger = get_logger(exp_name)    
@@ -88,13 +110,25 @@ def run(args_list=None):
         run_opts={"device": DEVICE}
     )
 
+    logger.info("Loading Silero VAD Model...")
+    vad_model, utils = torch.hub.load(
+        repo_or_dir='snakers4/silero-vad',
+        model='silero_vad',
+        force_reload=False
+    )
+    (get_speech_timestamps, _, _, _, _) = utils
+    vad_model = vad_model.to(DEVICE)
+
     # ┌───────────────────────────────────────────────┐
     # │                   LOAD DATA                   │
     # └───────────────────────────────────────────────┘
-    # Fetch all dataset meeting folders
-    meeting_folders = [f for f in DATASET_PATH.iterdir() 
-                        if (f.is_dir() and 
-                            f.name not in ["ami_public_manual_1.6.2", "xinlu_data"])]
+    if args.meeting_path:
+        meeting_folders=[Path(args.meeting_path)]
+    else:
+        # Fetch all dataset meeting folders
+        meeting_folders = [f for f in DATASET_PATH.iterdir() 
+                            if (f.is_dir() and 
+                                f.name not in ["ami_public_manual_1.6.2", "xinlu_data"])]
 
     # Wrap logging with tqdm
     with logging_redirect_tqdm(loggers=[logger]):
@@ -128,6 +162,8 @@ def run(args_list=None):
                 enrolled_profiles[speaker_id] = extract_enrollment_embedding(
                     headset_file, 
                     speaker_classifier, 
+                    vad_model,
+                    get_speech_timestamps,
                     DEVICE
                 )
 
@@ -140,7 +176,6 @@ def run(args_list=None):
             
             result = model.transcribe(audio=audio_np)
             whisper_segments = result["segments"]
-
 
             # ┌───────────────────────────────────────────────┐
             # │          CLASSIFY SEGMENTS VIA ECAPA          │
@@ -207,3 +242,4 @@ def run(args_list=None):
                 f.write("".join(diarized_lines))
                 
             logger.info(f"Saved transcript for {transcript_file_path}\n\n")
+            break

@@ -7,8 +7,8 @@
 #SBATCH -t 2-00:00:00
 #SBATCH --gres=gpu:1
 #SBATCH -C A100
-#SBATCH -o whisper_large-v3.out
-#SBATCH -e whisper_large-v3.out
+#SBATCH -o whisper_tiny.out
+#SBATCH -e whisper_tiny.out
 
 # -----------------------------
 # Load Required Modules
@@ -37,4 +37,4 @@ export PYTORCH_ALLOC_CONF=expandable_segments:True
 # -----------------------------
 # Run the Job (Example: Python Script / Module)
 # -----------------------------
-python run_scripts.py --scripts generate_diarized_whisper_transcripts --whisper-size large-v3
+python run_scripts.py --scripts generate_diarized_whisper_transcripts --whisper-size tiny
