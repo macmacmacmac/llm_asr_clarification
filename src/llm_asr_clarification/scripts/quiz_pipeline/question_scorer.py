@@ -16,10 +16,12 @@ def run(args_list=None):
     # Perform CLI Argument Parsing=================================================
     parser = argparse.ArgumentParser()
     parser.add_argument("--msg", type=str, default="example")
-    # parser.add_argument("--ami_path", type=str, default="./datasets/amicorpus")
-    parser.add_argument("--ami_path", type=str, default="/group/jrwhitehill/amicorpus")
-    parser.add_argument("--transcript_file", type=str, default="large_transcript")
-    parser.add_argument("--question_file", type=str, default="parsed_gt")
+    parser.add_argument("--model_to_use", type=str, default="gpt-4o-mini")
+    parser.add_argument("--ami_path", type=str, default="./datasets/amicorpus")
+    parser.add_argument("--transcript_file", type=str, default="qwen_transcript")
+    parser.add_argument("--question_file", type=str, default="parsed_diarized_gt")
+    parser.add_argument("--do_all_meetings", action="store_true")
+    parser.set_defaults(do_all_meetings=False)
     parser.add_argument("--meeting_to_do", type=str, default="/group/jrwhitehill/amicorpus/ES2005d")
     parser.add_argument("--chunk_size", type=int, default=10)
 
@@ -43,14 +45,15 @@ def run(args_list=None):
     #==============================================================================================
 
     # directories of meetings
-    if args.meeting_to_do:
-        meeting_paths = [args.meeting_to_do]
+    if args.do_all_meetings:
+        meeting_paths = [entry.path for entry in os.scandir(args.ami_path) if entry.name not in ['ami_public_manual_1.6.2', 'xinlu_data']]
     else:
-        meeting_paths = [entry.path for entry in os.scandir(args.ami_path) if 'ami_public_manual_1.6.2' not in entry.name]
+        meeting_paths = [args.meeting_to_do]
+
     for meeting_path in tqdm(meeting_paths):
         question_path = os.path.join(meeting_path, "transcripts", f"quiz_from_{args.question_file}.json")
 
-        chatgpt = OpenAIWrapper()
+        chatgpt = OpenAIWrapper(logger=logger)
 
         # Read quiz
         with open(question_path, "r", encoding="utf-8") as f:
@@ -71,26 +74,28 @@ def run(args_list=None):
             num_questions=num_questions
         )
 
-        response_text = chatgpt.prompt_chatgpt(prompt, max_tokens=1024)
+        response_text = chatgpt.prompt_chatgpt(
+            prompt, 
+            # max_tokens=1024,
+            max_completion_tokens=1024,
+            model=args.model_to_use
+        )
 
         try:
             result = json.loads(response_text)
         except Exception:
-            logger.warning(
+            logger.error(
                 f"Could not parse response. Defaulting to None.\n"
                 f"Response: {response_text}"
             )
-            result = {
-                "scores": None,
-            }
 
         try: 
-            scores = result.get("scores", None)
+            scores = []
+            for i in range(num_questions):
+                score = result.get(f"question_{i}_score", "n/a")
+                scores.append(score)
 
             # ipdb.set_trace()
-
-            assert scores is not None, "'score' is None"
-            assert (len(scores) == num_questions), "'answers' has wrong length"
 
             for qca, s in zip(quiz, scores):
                 qca[f"score_using_{args.transcript_file}"] = s
@@ -99,9 +104,9 @@ def run(args_list=None):
                 f.write(json.dumps(quiz, indent=4))
 
 
-            logger.info(f"success! answered all the questions")
+            logger.info("success! answered all the questions")
         except AssertionError as e:
-            logger.info(f"Encountered an error")
+            logger.info("Encountered an error")
             logger.error(str(e))
 
     

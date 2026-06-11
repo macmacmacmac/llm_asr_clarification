@@ -62,6 +62,7 @@ QUIZ_QUESTION_GENERATOR_PROMPT = """# Task Description:
 You are an expert at making quiz questions to test if people have been paying attention to meetings.
 You will be shown a transcription taken from a meeting. Your task is to generate {num_questions} quiz questions
 that only someone who has paid close attention to the meeting will be able to answer.
+Try to identify specific pieces of information that will likely be important to remember later for the participants.
 The {num_questions} questions should not be answerable from common sense, it should instead quiz for 
 important, specific information that only someone paying attention to the meeting would be able to answer.
 
@@ -69,14 +70,18 @@ Avoid making reference to a specific speaker identifier IE: "What did Speaker 1 
 
 ## Output Format:
 
-Output your {num_questions} quiz questions and their corresponding answers in JSON format
-as two parallel arrays of strings like so. THERE SHOULD BE PRECISELY {num_questions} QUESTIONS AND ANSWERS. 
+First, write a meeting minute summarizing CONCISELY the important details of the meeting. 
+Next, output your {num_questions} quiz questions and their corresponding answers as two parallel arrays of strings. 
+
+This should all be done in JSON format like so:
 
 {{
+  "meeting_minutes": string,
   "quiz_questions": [string, string, ...],
   "correct_answers": [string, string, ...]
 }}
 
+THERE SHOULD BE PRECISELY {num_questions} QUESTIONS AND ANSWERS. 
 Return a single JSON object ONLY. Do NOT output anything else or any preamble. 
 ONLY output response in the following format.
 
@@ -120,15 +125,21 @@ ONLY output response in the following format.
 QUIZ_SCORER_PROMPT = """# Task Description:
 You are an expert at grading quizzes. You will be shown {num_questions} quiz questions along with the
 corresponding correct answers and the predicted answers. Your task is to determine if the predicted answer
-contains the same idea as the correct answer while tolerating paraphrasals. 
+contains the same idea as the correct answer while tolerating paraphrasals.
 If the answer is correct, give a score of 1. Else give a score of 0.
+
+If the answer mentions other extraneous information, so long as it also contains the core idea,
+mark it as correct (1).
 
 ## Output Format:
 
 Output your scores in JSON format like so:
 
 {{
-  "scores": [int, int, ...]
+  "question_1_score": (int) 0 | 1,
+  "question_2_score": (int) 0 | 1,
+  ...
+  "question_{num_questions}_score": (int) 0 | 1
 }}
 
 Return a single JSON object ONLY. Do NOT output anything else or any preamble. 

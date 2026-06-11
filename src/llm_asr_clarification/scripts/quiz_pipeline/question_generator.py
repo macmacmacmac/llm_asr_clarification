@@ -15,8 +15,11 @@ def run(args_list=None):
     # Perform CLI Argument Parsing=================================================
     parser = argparse.ArgumentParser()
     parser.add_argument("--msg", type=str, default="example")
+    parser.add_argument("--model_to_use", type=str, default="gpt-5.4-mini")
     parser.add_argument("--ami_path", type=str, default="./datasets/amicorpus")
-    parser.add_argument("--question_file", type=str, default="parsed_gt")
+    parser.add_argument("--question_file", type=str, default="parsed_diarized_gt")
+    parser.add_argument("--do_all_meetings", action="store_true")
+    parser.set_defaults(do_all_meetings=False)
     parser.add_argument("--meeting_to_do", type=str, default="./datasets/amicorpus/ES2005d")
     parser.add_argument("--num_questions", type=int, default=10)
 
@@ -39,33 +42,19 @@ def run(args_list=None):
 
     #==============================================================================================
 
-    def split_into_sentences(text: str):
-        """
-        Basic sentence splitter.
-        You can replace with nltk if desired.
-        """
-        sentences = re.split(r'(?<=[.!?])\s+', text.strip())
-        return [s.strip() for s in sentences if s.strip()]
-
-
-    def chunk_sentences(sentences, chunk_size=5):
-        for i in range(0, len(sentences), chunk_size):
-            yield sentences[i:i + chunk_size]
-
-
-    chatgpt = OpenAIWrapper()
-
     # directories of meetings
-    if args.meeting_to_do:
-        meeting_paths = [args.meeting_to_do]
+    if args.do_all_meetings:
+        meeting_paths = [entry.path for entry in os.scandir(args.ami_path) if entry.name not in ['ami_public_manual_1.6.2', 'xinlu_data']]
     else:
-        meeting_paths = [entry.path for entry in os.scandir(args.ami_path) if 'ami_public_manual_1.6.2' not in entry.name]
+        meeting_paths = [args.meeting_to_do]
+    
     for meeting_path in tqdm(meeting_paths):
         file_todo_path = os.path.join(meeting_path, "transcripts", f"{args.question_file}.txt")
         output_preds_path = os.path.join(meeting_path, "transcripts", f"quiz_from_{args.question_file}.json")
         
         logger.info(f"Generating Questions for file: {file_todo_path}")
         
+        chatgpt = OpenAIWrapper(logger=logger)
 
         # Read transcript
         with open(file_todo_path, "r", encoding="utf-8") as f:
@@ -76,8 +65,13 @@ def run(args_list=None):
             num_questions=args.num_questions
         )
 
-        response_text = chatgpt.prompt_chatgpt(prompt, max_tokens=1024)
-
+        response_text = chatgpt.prompt_chatgpt(
+            prompt, 
+            # max_tokens=1024,
+            max_completion_tokens=1024,
+            model=args.model_to_use
+        )
+        
         try:
             result = json.loads(response_text)
         except Exception:
