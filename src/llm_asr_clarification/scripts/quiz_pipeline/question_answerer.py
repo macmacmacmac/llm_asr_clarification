@@ -15,11 +15,10 @@ def run(args_list=None):
     # Perform CLI Argument Parsing=================================================
     parser = argparse.ArgumentParser()
     parser.add_argument("--msg", type=str, default="example")
-    # parser.add_argument("--ami_path", type=str, default="./datasets/amicorpus")
-    parser.add_argument("--ami_path", type=str, default="/group/jrwhitehill/amicorpus")
+    parser.add_argument("--ami_path", type=str, default="./datasets/amicorpus")
     parser.add_argument("--transcript_file", type=str, default="large_transcript")
     parser.add_argument("--question_file", type=str, default="parsed_gt")
-    parser.add_argument("--meeting_to_do", type=str, default="/group/jrwhitehill/amicorpus/ES2005d")
+    parser.add_argument("--meeting_to_do", type=str, default="./datasets/amicorpus/ES2005d")
     parser.add_argument("--chunk_size", type=int, default=10)
 
     args, _ = parser.parse_known_args(args_list)
@@ -103,9 +102,9 @@ def run(args_list=None):
             with open(question_path, "w", encoding="utf-8") as f:
                 f.write(json.dumps(question_answers, indent=4))
 
-            logger.info(f"success! answered all the questions")
+            logger.info("success! answered all the questions")
         except AssertionError as e:
-            logger.info(f"Encountered an error")
+            logger.info("Encountered an error")
             logger.error(str(e))
 
     

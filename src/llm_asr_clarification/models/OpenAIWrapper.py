@@ -31,11 +31,12 @@ class OpenAIWrapper:
     
     def prompt_chatgpt(
         self,
-        prompt: str, 
+        prompt: str,
+        model_name = 'gpt-4o-mini',
         **kwargs
     ):
         defaults = {
-            'model': 'gpt-4o-mini',
+            'model': model_name,
             'temperature': 0.0,
             'max_tokens': 128
         }

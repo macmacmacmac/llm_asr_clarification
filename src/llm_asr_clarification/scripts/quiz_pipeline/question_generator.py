@@ -2,12 +2,12 @@ import os
 import argparse
 from llm_asr_clarification import get_logger, OpenAIWrapper
 from llm_asr_clarification.models.prompts import QUIZ_QUESTION_GENERATOR_PROMPT
-import xml.etree.ElementTree as ET
 from tqdm.auto import tqdm
 import re
-import ast
 import ipdb
 import json
+
+
 # Driver Code
 def run(args_list=None):
     exp_name = os.path.basename(__file__)
@@ -15,10 +15,9 @@ def run(args_list=None):
     # Perform CLI Argument Parsing=================================================
     parser = argparse.ArgumentParser()
     parser.add_argument("--msg", type=str, default="example")
-    # parser.add_argument("--ami_path", type=str, default="./datasets/amicorpus")
-    parser.add_argument("--ami_path", type=str, default="/group/jrwhitehill/amicorpus")
+    parser.add_argument("--ami_path", type=str, default="./datasets/amicorpus")
     parser.add_argument("--question_file", type=str, default="parsed_gt")
-    parser.add_argument("--meeting_to_do", type=str, default="/group/jrwhitehill/amicorpus/ES2005d")
+    parser.add_argument("--meeting_to_do", type=str, default="./datasets/amicorpus/ES2005d")
     parser.add_argument("--num_questions", type=int, default=10)
 
     args, _ = parser.parse_known_args(args_list)
@@ -53,6 +52,9 @@ def run(args_list=None):
         for i in range(0, len(sentences), chunk_size):
             yield sentences[i:i + chunk_size]
 
+
+    chatgpt = OpenAIWrapper()
+
     # directories of meetings
     if args.meeting_to_do:
         meeting_paths = [args.meeting_to_do]
@@ -62,9 +64,8 @@ def run(args_list=None):
         file_todo_path = os.path.join(meeting_path, "transcripts", f"{args.question_file}.txt")
         output_preds_path = os.path.join(meeting_path, "transcripts", f"quiz_from_{args.question_file}.json")
         
-        logger.info(f"I am doing this file: {file_todo_path}")
+        logger.info(f"Generating Questions for file: {file_todo_path}")
         
-        chatgpt = OpenAIWrapper()
 
         # Read transcript
         with open(file_todo_path, "r", encoding="utf-8") as f:
