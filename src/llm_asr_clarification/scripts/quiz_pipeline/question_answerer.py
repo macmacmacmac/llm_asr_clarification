@@ -15,10 +15,12 @@ def run(args_list=None):
     # Perform CLI Argument Parsing=================================================
     parser = argparse.ArgumentParser()
     parser.add_argument("--msg", type=str, default="example")
-    # parser.add_argument("--ami_path", type=str, default="./datasets/amicorpus")
-    parser.add_argument("--ami_path", type=str, default="/group/jrwhitehill/amicorpus")
-    parser.add_argument("--transcript_file", type=str, default="large_transcript")
-    parser.add_argument("--question_file", type=str, default="parsed_gt")
+    parser.add_argument("--model_to_use", type=str, default="gpt-4o-mini")
+    parser.add_argument("--ami_path", type=str, default="./datasets/amicorpus")
+    parser.add_argument("--transcript_file", type=str, default="qwen_transcript")
+    parser.add_argument("--question_file", type=str, default="parsed_diarized_gt")
+    parser.add_argument("--do_all_meetings", action="store_true")
+    parser.set_defaults(do_all_meetings=False)
     parser.add_argument("--meeting_to_do", type=str, default="/group/jrwhitehill/amicorpus/ES2005d")
     parser.add_argument("--chunk_size", type=int, default=10)
 
@@ -42,17 +44,18 @@ def run(args_list=None):
     #==============================================================================================
 
     # directories of meetings
-    if args.meeting_to_do:
-        meeting_paths = [args.meeting_to_do]
+    if args.do_all_meetings:
+        meeting_paths = [entry.path for entry in os.scandir(args.ami_path) if entry.name not in ['ami_public_manual_1.6.2', 'xinlu_data']]
     else:
-        meeting_paths = [entry.path for entry in os.scandir(args.ami_path) if 'ami_public_manual_1.6.2' not in entry.name]
+        meeting_paths = [args.meeting_to_do]
+    
     for meeting_path in tqdm(meeting_paths):
         transcript_path = os.path.join(meeting_path, "transcripts", f"{args.transcript_file}.txt")
         question_path = os.path.join(meeting_path, "transcripts", f"quiz_from_{args.question_file}.json")
         
         logger.info(f"I am doing this file: {transcript_path}")
         
-        chatgpt = OpenAIWrapper()
+        chatgpt = OpenAIWrapper(logger=logger)
 
         # Read transcript
         with open(transcript_path, "r", encoding="utf-8") as f:
@@ -76,7 +79,12 @@ def run(args_list=None):
             num_questions=num_questions
         )
 
-        response_text = chatgpt.prompt_chatgpt(prompt, max_tokens=1024)
+        response_text = chatgpt.prompt_chatgpt(
+            prompt, 
+            # max_tokens=1024,
+            max_completion_tokens=1024,
+            model=args.model_to_use
+        )
 
         try:
             result = json.loads(response_text)
