@@ -71,7 +71,7 @@ def run(args_list=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("--whisper-size", type=str, default="tiny")
     parser.add_argument("--dataset-path", type=str, default="./datasets/amicorpus")
-    parser.add_argument("--meeting-path", type=str, default="./datasets/amicorpus/TS3011d")
+    parser.add_argument("--meeting-path", type=str, default="")
     parser.add_argument("--seed", type=int, default=47)
     
     args, _ = parser.parse_known_args(args_list)

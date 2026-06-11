@@ -37,4 +37,4 @@ export PYTORCH_ALLOC_CONF=expandable_segments:True
 # -----------------------------
 # Run the Job (Example: Python Script / Module)
 # -----------------------------
-python run_scripts.py --scripts generate_diarized_whisper_transcripts --whisper-size tiny
+python run_scripts.py --scripts transcription.whisper.generate_diarized --whisper-size tiny
