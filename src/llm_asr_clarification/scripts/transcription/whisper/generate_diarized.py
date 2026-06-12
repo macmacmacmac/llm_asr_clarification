@@ -33,8 +33,6 @@ def extract_enrollment_embedding(
     # Get Speech Timestamps using VAD model
     wav_tensor = waveform.squeeze(0) # (num_frames)
 
-    ipdb.set_trace()
-
     speech_timestamps = get_speech_timestamps(wav_tensor, vad_model, sampling_rate = SAMPLING_RATE)
 
     # Collect speech chunks until we hit target duration
@@ -52,17 +50,25 @@ def extract_enrollment_embedding(
         collected_frames += (end - start)
         if collected_frames >= target_frames:
             break
-
-    # Concatenate speech chunks into a block of continuous speech
-    combined_speech = torch.cat(speech_chunks, dim = 1)
-
-    # Trim combined speech chunk so its always target_duration_sec long
-    combined_speech = combined_speech[:, :target_frames]
-
-    with torch.no_grad():
-        emb = classifier.encode_batch(combined_speech)
     
-    return emb.squeeze()
+    if len(speech_chunks) > 0:
+        # Concatenate speech chunks into a block of continuous speech
+        combined_speech = torch.cat(speech_chunks, dim = 1)
+
+        # Trim combined speech chunk so its always target_duration_sec long
+        combined_speech = combined_speech[:, :target_frames]
+
+        # Embed the combined speech chunk and return the embedding 
+        with torch.no_grad():
+            emb = classifier.encode_batch(combined_speech)
+    
+        return emb.squeeze()
+
+    # Corner case when VAD found 0 speech in the entire audio
+    else:
+        return None
+
+    
 
 
 
@@ -160,15 +166,18 @@ def run(args_list=None):
             
             for headset_file in headset_files:
                 # Use the filename (e.g., "ES2005a.Headset-0") as the speaker label
-                speaker_id = headset_file.stem.split('.')[-1] 
-                
-                enrolled_profiles[speaker_id] = extract_enrollment_embedding(
+                speaker_id = headset_file.stem.split('.')[-1]
+
+                speaker_embedding = extract_enrollment_embedding(
                     headset_file, 
                     speaker_classifier, 
                     vad_model,
                     get_speech_timestamps,
                     DEVICE
                 )
+
+                if speaker_embedding is not None:
+                    enrolled_profiles[speaker_id] = speaker_embedding
 
             # ┌───────────────────────────────────────────────┐
             # │                 TRANSCRIPTION                 │
