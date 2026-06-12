@@ -11,6 +11,7 @@ import transformers
 from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq
 from speechbrain.inference.speaker import EncoderClassifier
 import torch.nn.functional as F
+from llm_asr_clarification.utils.diarization_utils import extract_enrollment_embedding
 
 # Completely mute all warnings
 transformers.logging.set_verbosity_error()
@@ -20,101 +21,37 @@ SAMPLING_RATE = 16_000
 # ┌───────────────────────────────────────────────┐
 # │                HELPER METHODS                 │
 # └───────────────────────────────────────────────┘
-def merge_timestamps(timestamps, sample_rate, max_chunk_len_sec=30.0, buffer_sec=0.5):
+def pad_vad_timestamps(timestamps, total_frames, sample_rate, pad_sec=0.5):
     """
-    Merges tiny VAD chunks into larger blocks and adds safety padding.
+    Pads individual VAD chunks to catch trailing consonants for the ASR model,
+    but ONLY merges them if they actually overlap.
+    This preserves strict speaker isolation while fixing transcription cut-offs!
     """
     if not timestamps:
         return []
 
-    merged = []
-    current_start = timestamps[0]['start']
-    current_end = timestamps[0]['end']
-    
-    # Convert seconds to frames
-    max_frames = int(max_chunk_len_sec * sample_rate)
-    buffer_frames = int(buffer_sec * sample_rate)
+    pad_frames = int(pad_sec * sample_rate)
+    padded = []
 
-    for i in range(1, len(timestamps)):
-        next_start = timestamps[i]['start']
-        next_end = timestamps[i]['end']
+    # Pad all chunks outward to capture breaths and consonants
+    for t in timestamps:
+        padded.append({
+            'start': max(0, t['start'] - pad_frames),
+            'end': min(total_frames, t['end'] + pad_frames)
+        })
+
+    # Merge ONLY if the padding caused them to touch/overlap
+    merged = [padded[0]]
+    for current in padded[1:]:
+        previous = merged[-1]
         
-        # Calculate how long the chunk would be if we merged them
-        proposed_len = next_end - current_start
-        
-        # If merging them keeps it under our maximum allowed size, merge them!
-        if proposed_len <= max_frames:
-            current_end = next_end
+        # If current chunk overlaps with the previous one, fuse them
+        if current['start'] <= previous['end']:
+            previous['end'] = max(previous['end'], current['end'])
         else:
-            # The chunk is big enough. Add padding and save it.
-            merged.append({
-                'start': max(0, current_start - buffer_frames), 
-                'end': current_end + buffer_frames
-            })
-            # Start a new chunk
-            current_start = next_start
-            current_end = next_end
-            
-    # Append the final chunk
-    merged.append({
-        'start': max(0, current_start - buffer_frames), 
-        'end': current_end + buffer_frames
-    })
-    
+            merged.append(current)
+
     return merged
-
-
-def extract_enrollment_embedding(
-        audio_path, 
-        classifier, 
-        vad_model, 
-        get_speech_timestamps, 
-        device,
-        target_duration_sec = 30.0
-    ):
-    """
-    Extracts a reference embedding by using VAD (Voice Activity Detection) to find and concatenate 
-    pure speech segments, ignoring all silence and background noise.
-    """
-    audio_np, sample_rate = sf.read(audio_path) # waveform shape: (num_frames,)
-    waveform = torch.from_numpy(audio_np).float().unsqueeze(0).to(device)
-
-    # Get Speech Timestamps using VAD model
-    wav_tensor = waveform.squeeze(0)
-    speech_timestamps = get_speech_timestamps(wav_tensor, vad_model, sampling_rate = sample_rate)
-
-    # Collect speech chunks until we hit target duration
-    speech_chunks = []
-    collected_frames = 0
-    target_frames = int(target_duration_sec * sample_rate)
-
-    # Keep collecting speech chunks until we hit target frames
-    for segment in speech_timestamps:
-        start = segment["start"]
-        end = segment["end"]
-        chunk = waveform[:, start:end]
-        speech_chunks.append(chunk)
-
-        collected_frames += (end - start)
-        if collected_frames >= target_frames:
-            break
-
-    if len(speech_chunks) > 0:
-        # Concatenate speech chunks into a block of continuous speech
-        combined_speech = torch.cat(speech_chunks, dim = 1)
-
-        # Trim combined speech chunk so its always target_duration_sec long
-        combined_speech = combined_speech[:, :target_frames]
-
-        # Embed the combined speech chunk and return the embedding 
-        with torch.no_grad():
-            emb = classifier.encode_batch(combined_speech)
-    
-        return emb.squeeze()
-
-    # Corner case when VAD found 0 speech in the entire audio
-    else:
-        return None
 
 
 # Driver Code
@@ -129,7 +66,7 @@ def run(args_list=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("--model-name", type=str, default="openai/whisper-tiny")
     parser.add_argument("--dataset-path", type=str, default="./datasets/amicorpus")
-    parser.add_argument("--meeting-path", type=str, default="./datasets/amicorpus/ES2005d")
+    parser.add_argument("--meeting-name", type=str, default="")
 
     args, _ = parser.parse_known_args(args_list)
 
@@ -159,8 +96,8 @@ def run(args_list=None):
     # ┌───────────────────────────────────────────────┐
     # │                  LOAD DATA                    │
     # └───────────────────────────────────────────────┘
-    if args.meeting_path:
-        meeting_folders=[Path(args.meeting_path)]
+    if args.meeting_name:
+        meeting_folders=[DATASET_PATH / args.meeting_name]
     else:
         # Fetch all dataset meeting folders
         meeting_folders = [f for f in DATASET_PATH.iterdir() 
@@ -254,13 +191,12 @@ def run(args_list=None):
             # Get Speech timestamps
             speech_timestamps = get_speech_timestamps(wav_tensor, vad_model, sampling_rate=sample_rate)
 
-            # Merge speech timestamps together into LLM-friendly chunks
-            # merged_timestamps = merge_timestamps(speech_timestamps, sample_rate)
+            # Pad and merge timestamps
+            padded_timestamps = pad_vad_timestamps(speech_timestamps, len(waveform), sample_rate)
             
             # Transcribe Chunks
             transcription_segments = []
-            # for segment in tqdm(merged_timestamps, desc="Transcribing chunks"):
-            for segment in tqdm(speech_timestamps, desc="Transcribing chunks"):
+            for segment in tqdm(padded_timestamps, desc="Transcribing chunks"):
                 
                 # Slice waveform
                 chunk = waveform[segment['start']: segment['end']]

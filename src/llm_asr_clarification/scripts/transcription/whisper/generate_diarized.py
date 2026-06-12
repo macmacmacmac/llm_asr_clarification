@@ -9,67 +9,9 @@ from tqdm.contrib.logging import logging_redirect_tqdm
 from speechbrain.inference.speaker import EncoderClassifier
 import torch.nn.functional as F
 import ipdb
+from llm_asr_clarification.utils.diarization_utils import extract_enrollment_embedding
 
 SAMPLING_RATE = 16_000
-
-# ┌───────────────────────────────────────────────┐
-# │                 HELPER METHODS                │
-# └───────────────────────────────────────────────┘
-def extract_enrollment_embedding(
-        audio_path, 
-        classifier, 
-        vad_model, 
-        get_speech_timestamps, 
-        device,
-        target_duration_sec = 30.0
-    ):
-    """
-    Extracts a reference embedding by using VAD (Voice Activity Detection) to find and concatenate 
-    pure speech segments, ignoring all silence and background noise.
-    """
-    audio_np = whisper.load_audio(audio_path.as_posix()) # (num_frames,)
-    waveform = torch.from_numpy(audio_np).unsqueeze(0).to(device) # (1, num_frames)
-
-    # Get Speech Timestamps using VAD model
-    wav_tensor = waveform.squeeze(0) # (num_frames)
-
-    speech_timestamps = get_speech_timestamps(wav_tensor, vad_model, sampling_rate = SAMPLING_RATE)
-
-    # Collect speech chunks until we hit target duration
-    speech_chunks = []
-    collected_frames = 0
-    target_frames = int(target_duration_sec * SAMPLING_RATE)
-
-    # Keep collecting speech chunks until we hit target frames
-    for segment in speech_timestamps:
-        start = segment["start"]
-        end = segment["end"]
-        chunk = waveform[:, start:end]
-        speech_chunks.append(chunk)
-
-        collected_frames += (end - start)
-        if collected_frames >= target_frames:
-            break
-    
-    if len(speech_chunks) > 0:
-        # Concatenate speech chunks into a block of continuous speech
-        combined_speech = torch.cat(speech_chunks, dim = 1)
-
-        # Trim combined speech chunk so its always target_duration_sec long
-        combined_speech = combined_speech[:, :target_frames]
-
-        # Embed the combined speech chunk and return the embedding 
-        with torch.no_grad():
-            emb = classifier.encode_batch(combined_speech)
-    
-        return emb.squeeze()
-
-    # Corner case when VAD found 0 speech in the entire audio
-    else:
-        return None
-
-    
-
 
 
 # Driver Code
@@ -80,7 +22,7 @@ def run(args_list=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("--whisper-size", type=str, default="tiny")
     parser.add_argument("--dataset-path", type=str, default="./datasets/amicorpus")
-    parser.add_argument("--meeting-path", type=str, default="")
+    parser.add_argument("--meeting-name", type=str, default="")
     parser.add_argument("--seed", type=int, default=47)
     
     args, _ = parser.parse_known_args(args_list)
@@ -131,8 +73,8 @@ def run(args_list=None):
     # ┌───────────────────────────────────────────────┐
     # │                   LOAD DATA                   │
     # └───────────────────────────────────────────────┘
-    if args.meeting_path:
-        meeting_folders=[Path(args.meeting_path)]
+    if args.meeting_name:
+        meeting_folders=[DATASET_PATH / args.meeting_name]
     else:
         # Fetch all dataset meeting folders
         meeting_folders = [f for f in DATASET_PATH.iterdir() 
