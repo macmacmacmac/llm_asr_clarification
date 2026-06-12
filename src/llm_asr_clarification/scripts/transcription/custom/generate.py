@@ -221,7 +221,7 @@ with logging_redirect_tqdm():
             # ┌───────────────────────────────────────────────┐
             # │                SAVE TRANSCRIPT                │
             # └───────────────────────────────────────────────┘
-            transcript_file_path = transcripts_folder / f"{MODEL_NAME.split('/')[-1]}_transcript.txt"
+            transcript_file_path = transcripts_folder / f"custom_{MODEL_NAME.split('/')[-1]}_transcript.txt"
             with open(transcript_file_path, "w") as f:
                 f.write(combined_text)
                 

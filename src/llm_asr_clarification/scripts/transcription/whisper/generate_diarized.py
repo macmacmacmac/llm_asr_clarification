@@ -27,11 +27,14 @@ def extract_enrollment_embedding(
     Extracts a reference embedding by using VAD (Voice Activity Detection) to find and concatenate 
     pure speech segments, ignoring all silence and background noise.
     """
-    audio_np = whisper.load_audio(audio_path.as_posix())
-    waveform = torch.from_numpy(audio_np).unsqueeze(0).to(device)
+    audio_np = whisper.load_audio(audio_path.as_posix()) # (num_frames,)
+    waveform = torch.from_numpy(audio_np).unsqueeze(0).to(device) # (1, num_frames)
 
     # Get Speech Timestamps using VAD model
-    wav_tensor = waveform.squeeze(0)
+    wav_tensor = waveform.squeeze(0) # (num_frames)
+
+    ipdb.set_trace()
+
     speech_timestamps = get_speech_timestamps(wav_tensor, vad_model, sampling_rate = SAMPLING_RATE)
 
     # Collect speech chunks until we hit target duration
@@ -242,4 +245,3 @@ def run(args_list=None):
                 f.write("".join(diarized_lines))
                 
             logger.info(f"Saved transcript for {transcript_file_path}\n\n")
-            break
