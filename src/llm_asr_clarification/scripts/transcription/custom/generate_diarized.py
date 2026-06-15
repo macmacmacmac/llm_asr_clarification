@@ -8,7 +8,7 @@ from tqdm.contrib.logging import logging_redirect_tqdm
 import soundfile as sf
 import ipdb
 import transformers
-from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq
+from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq, pipeline
 from speechbrain.inference.speaker import EncoderClassifier
 import torch.nn.functional as F
 from llm_asr_clarification.utils.diarization_utils import extract_enrollment_embedding
@@ -17,41 +17,6 @@ from llm_asr_clarification.utils.diarization_utils import extract_enrollment_emb
 transformers.logging.set_verbosity_error()
 
 SAMPLING_RATE = 16_000
-
-# ┌───────────────────────────────────────────────┐
-# │                HELPER METHODS                 │
-# └───────────────────────────────────────────────┘
-def pad_vad_timestamps(timestamps, total_frames, sample_rate, pad_sec=0.5):
-    """
-    Pads individual VAD chunks to catch trailing consonants for the ASR model,
-    but ONLY merges them if they actually overlap.
-    This preserves strict speaker isolation while fixing transcription cut-offs!
-    """
-    if not timestamps:
-        return []
-
-    pad_frames = int(pad_sec * sample_rate)
-    padded = []
-
-    # Pad all chunks outward to capture breaths and consonants
-    for t in timestamps:
-        padded.append({
-            'start': max(0, t['start'] - pad_frames),
-            'end': min(total_frames, t['end'] + pad_frames)
-        })
-
-    # Merge ONLY if the padding caused them to touch/overlap
-    merged = [padded[0]]
-    for current in padded[1:]:
-        previous = merged[-1]
-        
-        # If current chunk overlaps with the previous one, fuse them
-        if current['start'] <= previous['end']:
-            previous['end'] = max(previous['end'], current['end'])
-        else:
-            merged.append(current)
-
-    return merged
 
 
 # Driver Code
@@ -138,6 +103,16 @@ def run(args_list=None):
         run_opts={"device": DEVICE}
     )
 
+    # ┌───────────────────────────────────────────────┐
+    # │               LOAD ASR PIPELINE               │
+    # └───────────────────────────────────────────────┘
+    ASR_PIPELINE = pipeline(
+        "automatic-speech-recognition",
+        model=model,
+        tokenizer=processor.tokenizer,
+        feature_extractor=processor.feature_extractor
+    )
+
     # Wrap logging with tqdm
     with logging_redirect_tqdm(loggers=[logger]):
 
@@ -177,89 +152,51 @@ def run(args_list=None):
                     enrolled_profiles[speaker_id] = speaker_embedding
 
             # ┌───────────────────────────────────────────────┐
-            # │                 TRANSCRIPTION                 │
+            # │          TRANSCRIPTION AND DIARIZATION        │
             # └───────────────────────────────────────────────┘
-            logger.info(f"Processing audio: {mix_file_path.name}")
+            logger.info(f"Transcribing audio: {mix_file_path.name}")
             waveform, sample_rate = sf.read(mix_file_path) # waveform shape: (num_frames,)
+            waveform = waveform.astype("float32")
 
             if len(waveform.shape) > 1:
                 waveform = waveform.mean(axis=1) # Flatten to mono
 
             # Convert numpy array to torch tensor for Silero VAD
-            wav_tensor = torch.from_numpy(waveform).to(DEVICE).float()
+            wav_tensor = torch.from_numpy(waveform).to(DEVICE)
 
             # Get Speech timestamps
             speech_timestamps = get_speech_timestamps(wav_tensor, vad_model, sampling_rate=sample_rate)
 
-            # Pad and merge timestamps
-            padded_timestamps = pad_vad_timestamps(speech_timestamps, len(waveform), sample_rate)
-            
-            # Transcribe Chunks
-            transcription_segments = []
-            for segment in tqdm(padded_timestamps, desc="Transcribing chunks"):
-                
-                # Slice waveform
-                chunk = waveform[segment['start']: segment['end']]
+            # Pad by 0.5 seconds (in frames) for Whisper's acoustic context
+            pad_frames = int(0.5 * SAMPLING_RATE)
 
-                # Process chunk into model-specific tensor features (e.g. log-mel spectrogram)
-                inputs = processor(
-                    chunk, 
-                    sampling_rate=sample_rate, 
-                    return_tensors="pt",
-                ).to(DEVICE)
-
-                # Cast float tensors to bfloat16 to match the model precision
-                if "input_features" in inputs:
-                    inputs["input_features"] = inputs["input_features"].to(torch.bfloat16)
-                
-                # Generate Token IDs
-                with torch.no_grad():
-                    # Check if the model has a strict target position limit
-                    max_allowed = getattr(model.config, "max_target_positions", 4096)
-                    
-                    # Leave a buffer of 20 tokens for hidden start/prompt tokens
-                    safe_max_tokens = min(400, max_allowed - 20) 
-
-                    generated_ids = model.generate(**inputs, max_new_tokens=safe_max_tokens)
-
-                    # generated_ids = model.generate(**inputs, max_new_tokens=256)
-                
-                # Decode Token IDs back to text strings
-                transcription = processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
-                
-                if transcription.strip():
-                    transcription_segments.append({
-                        "start": segment["start"],
-                        "end": segment["end"],
-                        "text": transcription.strip()
-                    })
-            
-            
-            # ┌───────────────────────────────────────────────┐
-            # │          CLASSIFY SEGMENTS VIA ECAPA          │
-            # └───────────────────────────────────────────────┘
-            logger.info("Classifying speaker for each transcribed segment...")
+            # Diarization variables
             speaker_separated_data = []
+            last_valid_speaker = "UNKNOWN" # Keep track of the last successfully identified speaker
+            
+            for segment in tqdm(speech_timestamps, desc="Transcribing"):
+                vad_start = segment["start"]
+                vad_end = segment["end"]
 
-            # Keep track of the last successfully identified speaker
-            last_valid_speaker = "UNKNOWN"
+                # TRANSCRIPTION
+                asr_start = max(0, vad_start - pad_frames)
+                asr_end = min(len(waveform), vad_end + pad_frames)
+                asr_chunk = waveform[asr_start: asr_end]
+                transcription = ASR_PIPELINE(asr_chunk)
+                text = transcription["text"].strip()
 
-            for segment in transcription_segments:
-                start_frame = segment["start"]
-                end_frame = segment["end"]
-                text = segment["text"].strip()
+                # Skip further processing if no text was transcribed
+                if not text:
+                    continue
 
-                # Get the current chunk based on start and end frame
-                chunk_array = waveform[start_frame: end_frame]
-
-                # Convert to a 2D PyTorch Tensor and send to the GPU
-                chunk_tensor = torch.from_numpy(chunk_array).float().unsqueeze(0).to(DEVICE)
+                # DIARIZATION
+                ecapa_chunk = waveform[vad_start: vad_end]
+                chunk_tensor = torch.from_numpy(ecapa_chunk).unsqueeze(0).to(DEVICE)
 
                 if chunk_tensor.shape[1] < SAMPLING_RATE:
                     best_speaker = last_valid_speaker
                 
                 else:
-
                     with torch.no_grad():
                         chunk_emb = speaker_classifier.encode_batch(chunk_tensor).squeeze()
                     
