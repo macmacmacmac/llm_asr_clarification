@@ -172,24 +172,44 @@ def run(args_list=None):
                     if best_speaker != "UNKNOWN":
                         last_valid_speaker = best_speaker
                 
-                speaker_separated_data.append((best_speaker, text))
+                speaker_separated_data.append({
+                    "speaker": best_speaker,
+                    "text": text,
+                    "start": int(seg_start),
+                    "end": int(seg_end)
+                })
 
             # ┌───────────────────────────────────────────────┐
             # │                FORMAT & SAVE                  │
             # └───────────────────────────────────────────────┘
             diarized_lines = []
             if speaker_separated_data:
-                last_speaker, combined_text = speaker_separated_data[0]
-                
-                for current_speaker, text in speaker_separated_data[1:]:
-                    if current_speaker == last_speaker:
-                        combined_text += " " + text
-                    else:
-                        diarized_lines.append(f"[{last_speaker}]: {combined_text.strip()}\n")
-                        last_speaker = current_speaker
-                        combined_text = text
 
-                diarized_lines.append(f"[{last_speaker}]: {combined_text.strip()}\n")
+                # Use the first data as the initial point
+                last_speaker = speaker_separated_data[0]["speaker"]
+                combined_text = speaker_separated_data[0]["text"]
+                start = speaker_separated_data[0]["start"]
+                end = speaker_separated_data[0]["end"]
+
+
+                for data in speaker_separated_data[1:]:
+                    # If the speaker hasn't changed
+                    if data["speaker"] == last_speaker:
+                        # Combine the texts
+                        combined_text += " " + data["text"]
+
+                        # Merge the timestamps
+                        end = data["end"]
+                    
+                    # The speaker has changed
+                    else:
+                        diarized_lines.append(f"({start} - {end})[{last_speaker}]: {combined_text.strip()}\n")
+                        last_speaker = data["speaker"]
+                        combined_text = data["text"]
+                        start = data["start"]
+                        end = data["end"]
+
+                diarized_lines.append(f"({start} - {end})[{last_speaker}]: {combined_text.strip()}\n")
 
             transcript_file_path = os.path.join(transcripts_folder, f"whisper_{WHISPER_SIZE}_diarized_transcript.txt")
             with open(transcript_file_path, "w", encoding="utf-8") as f:

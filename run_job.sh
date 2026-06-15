@@ -3,8 +3,8 @@
 #SBATCH -n 8
 #SBATCH --mem=16g
 #SBATCH -J "Transcribe"
-#SBATCH -p long
-#SBATCH -t 2-00:00:00
+#SBATCH -p short
+#SBATCH -t 1-00:00:00
 #SBATCH --gres=gpu:1
 #SBATCH -C A100
 #SBATCH -o whisper_tiny.out

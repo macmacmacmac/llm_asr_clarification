@@ -12,6 +12,7 @@ from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq, pipeline
 from speechbrain.inference.speaker import EncoderClassifier
 import torch.nn.functional as F
 from llm_asr_clarification.utils.diarization_utils import extract_enrollment_embedding
+import whisper
 
 # Completely mute all warnings
 transformers.logging.set_verbosity_error()
@@ -31,6 +32,7 @@ def run(args_list=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("--model-name", type=str, default="openai/whisper-tiny")
     parser.add_argument("--dataset-path", type=str, default="./datasets/amicorpus")
+    parser.add_argument("--whisper-size", type=str, default="tiny")
     parser.add_argument("--meeting-name", type=str, default="")
 
     args, _ = parser.parse_known_args(args_list)
@@ -38,6 +40,7 @@ def run(args_list=None):
     # Parse CLI arguments to global variables
     MODEL_NAME = args.model_name
     DATASET_PATH = Path(args.dataset_path)
+    WHISPER_SIZE = args.whisper_size
 
     # Other Global Variables
     DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
@@ -73,7 +76,7 @@ def run(args_list=None):
     # ┌───────────────────────────────────────────────┐
     # │                 LOAD MODELS                   │
     # └───────────────────────────────────────────────┘
-    logger.info(f"Loading Model: {MODEL_NAME}...")
+    logger.info(f"Loading HF Model: {MODEL_NAME}...")
 
     # AutoProcessor handles text tokenization AND audio feature extraction
     processor = AutoProcessor.from_pretrained(MODEL_NAME)
@@ -85,6 +88,10 @@ def run(args_list=None):
         torch_dtype=torch.bfloat16,
         low_cpu_mem_usage=True
     )
+
+    # Load Whisper Model for time segmentation
+    logger.info("Loading Whisper Model (For Time segmentation)...")
+    whisper_model = whisper.load_model(WHISPER_SIZE).to(DEVICE)
 
     # Load Voice Activity Detection (VAD) Model
     logger.info("Loading Silero VAD Model...")
@@ -151,6 +158,17 @@ def run(args_list=None):
                 if speaker_embedding is not None:
                     enrolled_profiles[speaker_id] = speaker_embedding
 
+
+            # TODO: This section is a pragmatic solution and is only temporary
+            # until we find a better solution for time segmentation
+            # ┌───────────────────────────────────────────────┐
+            # │        FETCH TIME SEGMENTS USING WHISPER      │
+            # └───────────────────────────────────────────────┘
+            logger.info("Running Time Segmentation using Whisper...")
+            audio_np = whisper.load_audio(mix_file_path.as_posix()) # (num_frames, )
+            audio_tensor = torch.from_numpy(audio_np).unsqueeze(0).to(DEVICE) # (1, num_frames)
+            speech_timestamps = whisper_model.transcribe(audio=audio_np)["segments"]
+
             # ┌───────────────────────────────────────────────┐
             # │          TRANSCRIPTION AND DIARIZATION        │
             # └───────────────────────────────────────────────┘
@@ -158,31 +176,28 @@ def run(args_list=None):
             waveform, sample_rate = sf.read(mix_file_path) # waveform shape: (num_frames,)
             waveform = waveform.astype("float32")
 
-            if len(waveform.shape) > 1:
-                waveform = waveform.mean(axis=1) # Flatten to mono
-
-            # Convert numpy array to torch tensor for Silero VAD
-            wav_tensor = torch.from_numpy(waveform).to(DEVICE)
-
-            # Get Speech timestamps
-            speech_timestamps = get_speech_timestamps(wav_tensor, vad_model, sampling_rate=sample_rate)
-
-            # Pad by 0.5 seconds (in frames) for Whisper's acoustic context
-            pad_frames = int(0.5 * SAMPLING_RATE)
+            # Pad by some milliseconds (in frames) for Whisper's acoustic context
+            pad_frames = int(0.1 * SAMPLING_RATE)
 
             # Diarization variables
             speaker_separated_data = []
             last_valid_speaker = "UNKNOWN" # Keep track of the last successfully identified speaker
             
             for segment in tqdm(speech_timestamps, desc="Transcribing"):
-                vad_start = segment["start"]
-                vad_end = segment["end"]
+
+                # Extract Start and End Frame
+                start_frame = int(segment["start"] * SAMPLING_RATE)
+                end_frame = int(segment["end"] * SAMPLING_RATE)
+
+                # Apply Padding
+                start_frame = max(0, start_frame - pad_frames)
+                end_frame = min(len(waveform), end_frame + pad_frames)
+
+                # Retrieve audio chunk
+                chunk = waveform[start_frame: end_frame]
 
                 # TRANSCRIPTION
-                asr_start = max(0, vad_start - pad_frames)
-                asr_end = min(len(waveform), vad_end + pad_frames)
-                asr_chunk = waveform[asr_start: asr_end]
-                transcription = ASR_PIPELINE(asr_chunk)
+                transcription = ASR_PIPELINE(chunk)
                 text = transcription["text"].strip()
 
                 # Skip further processing if no text was transcribed
@@ -190,9 +205,10 @@ def run(args_list=None):
                     continue
 
                 # DIARIZATION
-                ecapa_chunk = waveform[vad_start: vad_end]
-                chunk_tensor = torch.from_numpy(ecapa_chunk).unsqueeze(0).to(DEVICE)
+                chunk_tensor = torch.from_numpy(chunk).unsqueeze(0).to(DEVICE) # (1, num_frames)
 
+                # If the chunk contains audio less than 1 second
+                # Assign last speaker as the speaker
                 if chunk_tensor.shape[1] < SAMPLING_RATE:
                     best_speaker = last_valid_speaker
                 
@@ -213,24 +229,44 @@ def run(args_list=None):
                     if best_speaker != "UNKNOWN":
                         last_valid_speaker = best_speaker
                 
-                speaker_separated_data.append((best_speaker, text))
+                speaker_separated_data.append({
+                    "speaker": best_speaker,
+                    "text": text,
+                    "start": int(segment["start"]),
+                    "end": int(segment["end"])
+                })
 
             # ┌───────────────────────────────────────────────┐
             # │                FORMAT & SAVE                  │
             # └───────────────────────────────────────────────┘
             diarized_lines = []
             if speaker_separated_data:
-                last_speaker, combined_text = speaker_separated_data[0]
-                
-                for current_speaker, text in speaker_separated_data[1:]:
-                    if current_speaker == last_speaker:
-                        combined_text += " " + text
-                    else:
-                        diarized_lines.append(f"[{last_speaker}]: {combined_text.strip()}\n")
-                        last_speaker = current_speaker
-                        combined_text = text
 
-                diarized_lines.append(f"[{last_speaker}]: {combined_text.strip()}\n")
+                # Use the first data as the initial point
+                last_speaker = speaker_separated_data[0]["speaker"]
+                combined_text = speaker_separated_data[0]["text"]
+                start = speaker_separated_data[0]["start"]
+                end = speaker_separated_data[0]["end"]
+
+
+                for data in speaker_separated_data[1:]:
+                    # If the speaker hasn't changed
+                    if data["speaker"] == last_speaker:
+                        # Combine the texts
+                        combined_text += " " + data["text"]
+
+                        # Merge the timestamps
+                        end = data["end"]
+                    
+                    # The speaker has changed
+                    else:
+                        diarized_lines.append(f"({start} - {end})[{last_speaker}]: {combined_text.strip()}\n")
+                        last_speaker = data["speaker"]
+                        combined_text = data["text"]
+                        start = data["start"]
+                        end = data["end"]
+
+                diarized_lines.append(f"({start} - {end})[{last_speaker}]: {combined_text.strip()}\n")
 
             transcript_file_path = transcripts_folder / f"custom_{MODEL_NAME.split('/')[-1]}_transcript.txt"
             with open(transcript_file_path, "w", encoding="utf-8") as f:
