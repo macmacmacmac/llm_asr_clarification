@@ -28,7 +28,7 @@ MODEL_TO_USE = 'gpt-4o-mini'
 
 for t in transcript_files:
     for q in question_files:
-        command = f"sbatch -t 300 cpu_job.sh -o quiz_pipeline.out -e quiz_pipeline.out \
+        command = f"sbatch -t 300 -o quiz_pipeline.out -e quiz_pipeline.out cpu_job.sh \
             --scripts quiz_pipeline.question_answerer quiz_pipeline.question_scorer \
             --transcript_file {t} \
             --do_all_meetings \
