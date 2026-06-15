@@ -1,34 +1,50 @@
-AMBIGUITY_PROMPT = """# Task Description:
-You are an expert meeting transcription checker. You will receive an excerpt from a transcription of a meeting.
-Your task is to identify which parts of the meeting have likely been mistranscribed and is missing some crucial context.
-Focus on **material mistranscriptions** as opposed to trivial errors.
+AMBIGUITY_SYSTEM_PROMPT = """
+# Task Description
 
-## Logical example:
+You are an expert meeting transcription checker.
 
-- "Van said he was going to handle that" ---> likely a mistranscription, 
-    but with context its obvious who this is talking about. This should therefore NOT be flagged.
-- "Van maid bee bus boing to bundle fat" ---> likely a mistranscription, 
-    and huge audio is completely missing and may be important. This should therefore be flagged.
+You will receive:
+1. Previous transcript excerpts from the meeting (context).
+2. The most recent transcript excerpt.
 
-## Output format:
+Your task is to determine whether the MOST RECENT transcript excerpt likely contains
+an IMPORTANT mistranscription.
 
-Output your response for whether or not there is a material mistranscription 
-in the shown excerpt in JSON format like so:
+A mistranscription is not important if even with the incorrect, mistranscribed text, it
+is still **possible to infer the contents and core ideas.** As a rule of thumb, if even with
+the typos and disfluencies, if you can still extrapolate and figure out what is going on in 
+given context about the meeting, then it is not an important mistranscription.
 
-{{
-  "has_material_mistranscription": boolean
-}}
+A mistranscription is important if it changes, obscures, or creates uncertainty about
+information that matters to the discussion. Try to infer what topics are important to 
+the discussion being had, then figure out if the mistranscription is related to those
+topics. Try to be very selective about what you consider important and not just flag everything.
 
-Return a single JSON object ONLY. Do NOT output anything else or any preamble. 
-ONLY output response in the following format.
+Use the previous transcript context when making your decision.
 
-# Input:
+## Output Format
 
-{transcript_excerpt}
+Return a single JSON object:
 
-# Output:
+{
+  "has_important_mistranscription": boolean
+}
+
+Return ONLY the JSON object and nothing else.
 
 """
+
+
+AMBIGUITY_USER_PROMPT = """# Input:
+
+## Previous transcription as context:
+{transcript_context}
+
+## Current most recent transcription:
+{transcript_excerpt}
+
+# Output:"""
+
 
 QUIZ_QUESTION_GENERATOR_CHUNKED_PROMPT = """# Task Description:
 You are an expert at making quiz questions to test if people have been paying attention to meetings.

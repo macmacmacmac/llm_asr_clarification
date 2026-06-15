@@ -1,7 +1,7 @@
 import os
 import argparse
 from llm_asr_clarification import get_logger, OpenAIWrapper
-from llm_asr_clarification.models.prompts import AMBIGUITY_PROMPT
+from llm_asr_clarification.models.prompts import AMBIGUITY_SYSTEM_PROMPT, AMBIGUITY_USER_PROMPT
 import xml.etree.ElementTree as ET
 from tqdm.auto import tqdm
 import re
@@ -14,12 +14,12 @@ def run(args_list=None):
     
     # Perform CLI Argument Parsing=================================================
     parser = argparse.ArgumentParser()
-    parser.add_argument("--msg", type=str, default="example")
-    # parser.add_argument("--ami_path", type=str, default="./datasets/amicorpus")
-    parser.add_argument("--ami_path", type=str, default="/group/jrwhitehill/amicorpus")
-    parser.add_argument("--txt_file_to_do", type=str, default="large_transcript")
-    parser.add_argument("--meeting_to_do", type=str, default="/group/jrwhitehill/amicorpus/ES2005d")
-    parser.add_argument("--chunk_size", type=int, default=10)
+    parser.add_argument("--model_to_use", type=str, default="gpt-4o-mini")
+    parser.add_argument("--ami_path", type=str, default="./datasets/amicorpus")
+    parser.add_argument("--transcript_file", type=str, default="whisper_tiny_diarized_transcript")
+    parser.add_argument("--do_all_meetings", action="store_true")
+    parser.set_defaults(do_all_meetings=False)
+    parser.add_argument("--meeting_to_do", type=str, default="./datasets/amicorpus/ES2005d")
     
     args, _ = parser.parse_known_args(args_list)
 
@@ -39,60 +39,38 @@ def run(args_list=None):
     )
 
     #==============================================================================================
-
-    def split_into_sentences(text: str):
-        """
-        Basic sentence splitter.
-        You can replace with nltk if desired.
-        """
-        sentences = re.split(r'(?<=[.!?])\s+', text.strip())
-        return [s.strip() for s in sentences if s.strip()]
-
-
-    def chunk_sentences(sentences, chunk_size=5):
-        for i in range(0, len(sentences), chunk_size):
-            yield sentences[i:i + chunk_size]
-
     # directories of meetings
-    if args.meeting_to_do:
-        meeting_paths = [args.meeting_to_do]
+    if args.do_all_meetings:
+        meeting_paths = [entry.path for entry in os.scandir(args.ami_path) if entry.name not in ['ami_public_manual_1.6.2', 'xinlu_data']]
     else:
-        meeting_paths = [entry.path for entry in os.scandir(args.ami_path) if 'ami_public_manual_1.6.2' not in entry.name]
+        meeting_paths = [args.meeting_to_do]
+
     for meeting_path in tqdm(meeting_paths):
-        file_todo_path = os.path.join(meeting_path, "transcripts", f"{args.txt_file_to_do}.txt")
-        output_preds_path = os.path.join(meeting_path, "transcripts", f"{args.txt_file_to_do}_ambiguity_preds.txt")
+        file_todo_path = os.path.join(meeting_path, "transcripts", f"{args.transcript_file}.txt")
+        output_preds_path = os.path.join(meeting_path, "transcripts", f"ambiguity_preds_{args.transcript_file}.md")
         
         logger.info(f"I am doing this file: {file_todo_path}")
         
-        chatgpt = OpenAIWrapper()
-
-        # TODO: open the text file at file_todo_path
-        # TODO: iterate through text chunks in chunks of let's say 5 sentences, 
-        #      run it through the ambiguity detection prompt
-        #       
-        #       this should return a dict-like object
-        #       {
-        #           "has_material_mistranscription": boolean
-        #       }
-        #       If that text chunk has mistranscription, it should be bolded
+        chatgpt = OpenAIWrapper(logger=logger, system_prompt=AMBIGUITY_SYSTEM_PROMPT)
 
         # Read transcript
         with open(file_todo_path, "r", encoding="utf-8") as f:
             transcript_text = f.read()
 
-        sentences = split_into_sentences(transcript_text)
-
         markdown_chunks = []
 
-        for sentence_chunk in chunk_sentences(sentences, chunk_size=args.chunk_size):
+        prev_lines = ["<Meeting start>"]
 
-            transcript_excerpt = " ".join(sentence_chunk)
+        for line in tqdm(transcript_text.split("\n")):
 
-            prompt = AMBIGUITY_PROMPT.format(
-                transcript_excerpt=transcript_excerpt
+            prompt = AMBIGUITY_USER_PROMPT.format(
+                transcript_context="\n".join(prev_lines),
+                transcript_excerpt=line
             )
 
             response_text = chatgpt.prompt_chatgpt(prompt)
+
+            prev_lines.append(line)
 
             try:
                 result = json.loads(response_text)
@@ -102,21 +80,21 @@ def run(args_list=None):
                     f"Response: {response_text}"
                 )
                 result = {
-                    "has_material_mistranscription": False
+                    "has_important_mistranscription": False
                 }
 
             has_mistranscription = result.get(
-                "has_material_mistranscription",
+                "has_important_mistranscription",
                 False
             )
 
             if has_mistranscription:
                 markdown_chunks.append(
-                    f"**{transcript_excerpt}**"
+                    f"**{line}**"
                 )
             else:
                 markdown_chunks.append(
-                    transcript_excerpt
+                    line
                 )
 
         with open(output_preds_path, "w", encoding="utf-8") as f:

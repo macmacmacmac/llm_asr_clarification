@@ -14,8 +14,7 @@ def run(args_list=None):
     
     # Perform CLI Argument Parsing=================================================
     parser = argparse.ArgumentParser()
-    parser.add_argument("--msg", type=str, default="example")
-    parser.add_argument("--model_to_use", type=str, default="gpt-5.4-mini")
+    parser.add_argument("--model_to_use", type=str, default="gpt-4o-mini")
     parser.add_argument("--ami_path", type=str, default="./datasets/amicorpus")
     parser.add_argument("--question_file", type=str, default="parsed_diarized_gt")
     parser.add_argument("--do_all_meetings", action="store_true")

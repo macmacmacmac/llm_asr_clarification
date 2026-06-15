@@ -2,6 +2,8 @@ from openai import OpenAI, RateLimitError
 from dotenv import load_dotenv
 import os
 import time
+import ipdb
+import httpx
 
 load_dotenv()  
 
@@ -29,7 +31,21 @@ class OpenAIWrapper:
         if not api_key:
             raise ValueError("API key not found. Please add `OPENAI_API_KEY` inside a .env file in project root")
 
-        self.client = OpenAI(api_key=api_key, max_retries=5)
+        # 1. Define a hook that physically deletes the cookie header right before sending
+        def remove_cookie_header(request: httpx.Request):
+            if "cookie" in request.headers:
+                del request.headers["cookie"]
+
+        # 2. Assign the event hook to the HTTPX client
+        http_client = httpx.Client(
+            event_hooks={"request": [remove_cookie_header]}
+        )
+
+        self.client = OpenAI(
+            api_key=api_key, 
+            max_retries=5,
+            http_client=http_client
+        )
     
     def prompt_chatgpt(
         self,
@@ -65,6 +81,10 @@ class OpenAIWrapper:
                     f"(attempt {attempt + 1}/{max_retries})"
                 )
                 time.sleep(wait_time)
+            
+            # except Exception as e:
+            #     ipdb.set_trace()
+            #     raise
     # def prompt_chatgpt(
     #     self,
     #     prompt: str, 
