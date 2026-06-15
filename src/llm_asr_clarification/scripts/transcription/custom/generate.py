@@ -73,7 +73,7 @@ with logging_redirect_tqdm():
         
         # Perform CLI Argument Parsing
         parser = argparse.ArgumentParser()
-        parser.add_argument("--model-name", type=str, default="openai/whisper-large-v3")
+        parser.add_argument("--model-name", type=str, default="openai/whisper-tiny")
         parser.add_argument("--dataset-path", type=str, default="./datasets/amicorpus")
 
         args, _ = parser.parse_known_args(args_list)
@@ -221,7 +221,7 @@ with logging_redirect_tqdm():
             # ┌───────────────────────────────────────────────┐
             # │                SAVE TRANSCRIPT                │
             # └───────────────────────────────────────────────┘
-            transcript_file_path = transcripts_folder / f"{MODEL_NAME.split('/')[-1]}_transcript.txt"
+            transcript_file_path = transcripts_folder / f"custom_{MODEL_NAME.split('/')[-1]}_transcript.txt"
             with open(transcript_file_path, "w") as f:
                 f.write(combined_text)
                 

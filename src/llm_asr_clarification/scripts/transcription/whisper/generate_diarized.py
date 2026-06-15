@@ -9,36 +9,9 @@ from tqdm.contrib.logging import logging_redirect_tqdm
 from speechbrain.inference.speaker import EncoderClassifier
 import torch.nn.functional as F
 import ipdb
+from llm_asr_clarification.utils.diarization_utils import extract_enrollment_embedding
 
 SAMPLING_RATE = 16_000
-
-# ┌───────────────────────────────────────────────┐
-# │                 HELPER METHODS                │
-# └───────────────────────────────────────────────┘
-def extract_enrollment_embedding(audio_path, classifier, device):
-    """
-    Loads an individual headset file and extracts a 30-second 
-    voice print to act as the reference embedding for this speaker.
-    """
-    audio_np = whisper.load_audio(audio_path.as_posix())
-    waveform = torch.from_numpy(audio_np).unsqueeze(0).to(device)
-    
-    # Take a 30-second slice starting at the 1-minute mark 
-    # to avoid the initial silence of the meeting setup
-    start_frame = SAMPLING_RATE * 60 
-    end_frame = start_frame + (SAMPLING_RATE * 30)
-    
-    # Fallback if the file is very short
-    if waveform.shape[1] < end_frame:
-        chunk = waveform
-    else:
-        chunk = waveform[:, start_frame:end_frame]
-        
-    with torch.no_grad():
-        emb = classifier.encode_batch(chunk)
-        
-    # Squeeze out the batch dimensions so it's a flat vector
-    return emb.squeeze()
 
 
 # Driver Code
@@ -49,6 +22,7 @@ def run(args_list=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("--whisper-size", type=str, default="tiny")
     parser.add_argument("--dataset-path", type=str, default="./datasets/amicorpus")
+    parser.add_argument("--meeting-name", type=str, default="")
     parser.add_argument("--seed", type=int, default=47)
     
     args, _ = parser.parse_known_args(args_list)
@@ -59,7 +33,6 @@ def run(args_list=None):
 
     # Other Global Variables
     DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
-    MIN_FRAMES = SAMPLING_RATE
     
     # Init Logger
     logger = get_logger(exp_name)    
@@ -88,13 +61,25 @@ def run(args_list=None):
         run_opts={"device": DEVICE}
     )
 
+    logger.info("Loading Silero VAD Model...")
+    vad_model, utils = torch.hub.load(
+        repo_or_dir='snakers4/silero-vad',
+        model='silero_vad',
+        force_reload=False
+    )
+    (get_speech_timestamps, _, _, _, _) = utils
+    vad_model = vad_model.to(DEVICE)
+
     # ┌───────────────────────────────────────────────┐
     # │                   LOAD DATA                   │
     # └───────────────────────────────────────────────┘
-    # Fetch all dataset meeting folders
-    meeting_folders = [f for f in DATASET_PATH.iterdir() 
-                        if (f.is_dir() and 
-                            f.name not in ["ami_public_manual_1.6.2", "xinlu_data"])]
+    if args.meeting_name:
+        meeting_folders=[DATASET_PATH / args.meeting_name]
+    else:
+        # Fetch all dataset meeting folders
+        meeting_folders = [f for f in DATASET_PATH.iterdir() 
+                            if (f.is_dir() and 
+                                f.name not in ["ami_public_manual_1.6.2", "xinlu_data"])]
 
     # Wrap logging with tqdm
     with logging_redirect_tqdm(loggers=[logger]):
@@ -123,13 +108,18 @@ def run(args_list=None):
             
             for headset_file in headset_files:
                 # Use the filename (e.g., "ES2005a.Headset-0") as the speaker label
-                speaker_id = headset_file.stem.split('.')[-1] 
-                
-                enrolled_profiles[speaker_id] = extract_enrollment_embedding(
+                speaker_id = headset_file.stem.split('.')[-1]
+
+                speaker_embedding = extract_enrollment_embedding(
                     headset_file, 
                     speaker_classifier, 
+                    vad_model,
+                    get_speech_timestamps,
                     DEVICE
                 )
+
+                if speaker_embedding is not None:
+                    enrolled_profiles[speaker_id] = speaker_embedding
 
             # ┌───────────────────────────────────────────────┐
             # │                 TRANSCRIPTION                 │
@@ -140,7 +130,6 @@ def run(args_list=None):
             
             result = model.transcribe(audio=audio_np)
             whisper_segments = result["segments"]
-
 
             # ┌───────────────────────────────────────────────┐
             # │          CLASSIFY SEGMENTS VIA ECAPA          │
