@@ -108,9 +108,12 @@ def run(args_list=None):
             segment_tokens = []
 
             word = queue.popleft()
+
+            start_time = word['start']
+            end_time = word["end"]
+
             segment_tokens.append(word)
 
-            last_end = word["end"]
 
             SENTENCE_ENDINGS = {".", "?", "!"}
 
@@ -137,18 +140,42 @@ def run(args_list=None):
                     text += " " + token["text"]
 
             if text:
-                segments.append((speaker, text))
+                segments.append((speaker, text, start_time, end_time))
 
         transcript = ""
 
-        for speaker, text in segments:
-            transcript += f"[Speaker {speaker}]: {text}\n\n"
+        # old way without combining speakers
+        # for speaker, text, start_time, end_time in segments:
+        #     transcript += f"({start_time} - {end_time})[Speaker {speaker}]: {text}\n\n"
+
+        # combining speakers
+        combined_segments = []
+
+        for speaker, text, start_time, end_time in segments:
+            if combined_segments and combined_segments[-1]["speaker"] == speaker:
+                # Merge with previous segment
+                combined_segments[-1]["text"] += " " + text
+                combined_segments[-1]["end_time"] = end_time
+            else:
+                combined_segments.append({
+                    "speaker": speaker,
+                    "text": text,
+                    "start_time": start_time,
+                    "end_time": end_time,
+                })
+
+        transcript = ""
+        for seg in combined_segments:
+            transcript += (
+                f"({seg['start_time']:.0f} - {seg['end_time']:.0f})"
+                f"[Speaker {seg['speaker']}]: {seg['text']}\n\n"
+            )
 
         output_path = os.path.join(
             args.ami_path,
             meeting_name,
             "transcripts",
-            "parsed_diarized_gt.txt",
+            "parsed_diarized_timestamped_gt.txt",
         )
 
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
