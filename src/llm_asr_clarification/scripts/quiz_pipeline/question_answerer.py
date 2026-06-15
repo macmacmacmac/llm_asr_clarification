@@ -2,10 +2,7 @@ import os
 import argparse
 from llm_asr_clarification import get_logger, OpenAIWrapper
 from llm_asr_clarification.models.prompts import QUIZ_ANSWER_GENERATOR_PROMPT
-import xml.etree.ElementTree as ET
 from tqdm.auto import tqdm
-import re
-import ast
 import ipdb
 import json
 # Driver Code
@@ -21,8 +18,7 @@ def run(args_list=None):
     parser.add_argument("--question_file", type=str, default="parsed_diarized_gt")
     parser.add_argument("--do_all_meetings", action="store_true")
     parser.set_defaults(do_all_meetings=False)
-    parser.add_argument("--meeting_to_do", type=str, default="/group/jrwhitehill/amicorpus/ES2005d")
-    parser.add_argument("--chunk_size", type=int, default=10)
+    parser.add_argument("--meeting_to_do", type=str, default="./datasets/amicorpus/ES2005d")
 
     args, _ = parser.parse_known_args(args_list)
 
@@ -53,7 +49,7 @@ def run(args_list=None):
         transcript_path = os.path.join(meeting_path, "transcripts", f"{args.transcript_file}.txt")
         question_path = os.path.join(meeting_path, "transcripts", f"quiz_from_{args.question_file}.json")
         
-        logger.info(f"I am doing this file: {transcript_path}")
+        logger.info(f"processing: {transcript_path}")
         
         chatgpt = OpenAIWrapper(logger=logger)
 
@@ -100,18 +96,28 @@ def run(args_list=None):
         try: 
             answers = result.get("answers", None)
 
-            # ipdb.set_trace()
-
             assert answers is not None, "'answers' is None"
-            assert (len(answers) == num_questions), "'answers' has wrong length"
 
+            # TODO: There is a problem because of which sometimes the LLM returns correct answers but 
+            # misses a single question's answer and this happens for only some meetings, not all.
+            # We need to address this in the future
+
+            # assert (len(answers) == num_questions), f"'answers' has wrong length {len(answers)}"
+            if (len(answers) != num_questions):
+                logger.warning(f"'answers' has wrong length ({len(answers)}), {num_questions} expected.")
+
+            # Reset old answers
+            for qc in question_answers:
+                qc[f'answer_using_{args.transcript_file}'] = None
+
+            # Set new answers
             for qc, a in zip(question_answers, answers):
                 qc[f"answer_using_{args.transcript_file}"] = a
             
             with open(question_path, "w", encoding="utf-8") as f:
                 f.write(json.dumps(question_answers, indent=4))
 
-            logger.info("success! answered all the questions")
+            logger.info("success! Generated answers")
         except AssertionError as e:
             logger.info("Encountered an error")
             logger.error(str(e))

@@ -14,7 +14,6 @@ dependencies = [
     "jiwer>=4.0.0",
     "openai>=2.41.0",
     "openai-whisper>=20250625",
-    "pyannote-audio>=4.0.4",
     "qwen-asr>=0.0.6",
     "soundfile>=0.13.1",
     "speechbrain>=1.1.0",
