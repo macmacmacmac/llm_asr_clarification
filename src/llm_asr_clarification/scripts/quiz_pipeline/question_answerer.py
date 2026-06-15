@@ -97,6 +97,11 @@ def run(args_list=None):
             answers = result.get("answers", None)
 
             assert answers is not None, "'answers' is None"
+
+            # TODO: There is a problem because of which sometimes the LLM returns correct answers but 
+            # misses a single question's answer and this happens for only some meetings, not all.
+            # We need to address this in the future
+
             # assert (len(answers) == num_questions), f"'answers' has wrong length {len(answers)}"
             if (len(answers) != num_questions):
                 logger.warning(f"'answers' has wrong length ({len(answers)}), {num_questions} expected.")
