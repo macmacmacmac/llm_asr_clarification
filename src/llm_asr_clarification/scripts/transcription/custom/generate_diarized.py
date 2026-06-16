@@ -8,7 +8,7 @@ from tqdm.contrib.logging import logging_redirect_tqdm
 import soundfile as sf
 import ipdb
 import transformers
-from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq, pipeline
+from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq
 from speechbrain.inference.speaker import EncoderClassifier
 import torch.nn.functional as F
 from llm_asr_clarification.utils.diarization_utils import extract_enrollment_embedding
@@ -17,7 +17,51 @@ import whisper
 # Completely mute all warnings
 transformers.logging.set_verbosity_error()
 
+# Global Variables
 SAMPLING_RATE = 16_000
+
+
+def perform_transcription(
+        model,
+        processor,
+        audio_chunk,
+        num_beams = 3,
+        print_beam_results = False
+):
+    # Preprocess the audio into spectrogram features
+    inputs = processor(
+        audio_chunk, 
+        sampling_rate=SAMPLING_RATE, 
+        return_tensors="pt"
+    ).to(DEVICE)
+
+    # Cast features to match model precision if using bfloat16/half
+    if "input_features" in inputs:
+        inputs["input_features"] = inputs["input_features"].to(model.dtype)
+
+    # Generate text using the model
+    with torch.no_grad():
+        generated_ids = model.generate(
+            **inputs,
+            num_beams=num_beams,
+            num_return_sequences=num_beams,
+            temperature = 0.5,
+            do_sample = True
+        )
+
+    # Decode Token IDs back to text strings
+    decoded_results = processor.batch_decode(generated_ids, skip_special_tokens=True)
+    
+    # Print out all the beam results
+    if print_beam_results:
+        for i, beam_result in enumerate(decoded_results):
+            LOGGER.info(f"Beam {i + 1}: '{beam_result}'")
+
+    if print_beam_results:
+        ipdb.set_trace()
+
+    return decoded_results[0]
+
 
 
 # Driver Code
@@ -43,23 +87,25 @@ def run(args_list=None):
     WHISPER_SIZE = args.whisper_size
 
     # Other Global Variables
+    global DEVICE
     DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
     
-    # Build the logger here
+    # Build the LOGGER here
     # first arg is
-    logger = get_logger(exp_name)    
-    logger.info(
+    global LOGGER
+    LOGGER = get_logger(exp_name)    
+    LOGGER.info(
         f"{"="*100}\n\t\t\t\tRunning script: {exp_name}\n{"="*100}"
     )
 
     # Log received args
     received_args_log = "".join([f"|---> {arg}: {value}\n" for arg, value in vars(args).items()])
-    logger.info(
+    LOGGER.info(
         f"Received the following arguments:\n{received_args_log}"
     )
     
     # Log important variables
-    logger.info(f"Target device for model: {DEVICE}")
+    LOGGER.info(f"Target device for model: {DEVICE}")
 
     # ┌───────────────────────────────────────────────┐
     # │                  LOAD DATA                    │
@@ -76,7 +122,7 @@ def run(args_list=None):
     # ┌───────────────────────────────────────────────┐
     # │                 LOAD MODELS                   │
     # └───────────────────────────────────────────────┘
-    logger.info(f"Loading HF Model: {MODEL_NAME}...")
+    LOGGER.info(f"Loading HF Model: {MODEL_NAME}...")
 
     # AutoProcessor handles text tokenization AND audio feature extraction
     processor = AutoProcessor.from_pretrained(MODEL_NAME)
@@ -89,12 +135,15 @@ def run(args_list=None):
         low_cpu_mem_usage=True
     )
 
+    model.generation_config.language = "en"
+    model.generation_config.task = "transcribe"
+
     # Load Whisper Model for time segmentation
-    logger.info("Loading Whisper Model (For Time segmentation)...")
+    LOGGER.info("Loading Whisper Model (For Time segmentation)...")
     whisper_model = whisper.load_model(WHISPER_SIZE).to(DEVICE)
 
     # Load Voice Activity Detection (VAD) Model
-    logger.info("Loading Silero VAD Model...")
+    LOGGER.info("Loading Silero VAD Model...")
     vad_model, utils = torch.hub.load(
         repo_or_dir='snakers4/silero-vad',
         model='silero_vad',
@@ -104,24 +153,14 @@ def run(args_list=None):
     vad_model = vad_model.to(DEVICE)
 
     # Load ECAPA-TDNN Model for Speaker Enrollment and Diarization
-    logger.info("Loading SpeechBrain ECAPA-TDNN Model...")
+    LOGGER.info("Loading SpeechBrain ECAPA-TDNN Model...")
     speaker_classifier = EncoderClassifier.from_hparams(
         source="speechbrain/spkrec-ecapa-voxceleb",
         run_opts={"device": DEVICE}
     )
 
-    # ┌───────────────────────────────────────────────┐
-    # │               LOAD ASR PIPELINE               │
-    # └───────────────────────────────────────────────┘
-    ASR_PIPELINE = pipeline(
-        "automatic-speech-recognition",
-        model=model,
-        tokenizer=processor.tokenizer,
-        feature_extractor=processor.feature_extractor
-    )
-
     # Wrap logging with tqdm
-    with logging_redirect_tqdm(loggers=[logger]):
+    with logging_redirect_tqdm(loggers=[LOGGER]):
 
         # Prcoess all Meeting Folders
         for meeting_folder in tqdm(meeting_folders):
@@ -140,7 +179,7 @@ def run(args_list=None):
             # ┌───────────────────────────────────────────────┐
             # │               SPEAKER ENROLLMENT              │
             # └───────────────────────────────────────────────┘
-            logger.info(f"Extracting enrollment embeddings for {len(headset_files)} speakers...")
+            LOGGER.info(f"Extracting enrollment embeddings for {len(headset_files)} speakers...")
             enrolled_profiles = {}
             
             for headset_file in headset_files:
@@ -164,7 +203,7 @@ def run(args_list=None):
             # ┌───────────────────────────────────────────────┐
             # │        FETCH TIME SEGMENTS USING WHISPER      │
             # └───────────────────────────────────────────────┘
-            logger.info("Running Time Segmentation using Whisper...")
+            LOGGER.info("Running Time Segmentation using Whisper...")
             audio_np = whisper.load_audio(mix_file_path.as_posix()) # (num_frames, )
             audio_tensor = torch.from_numpy(audio_np).unsqueeze(0).to(DEVICE) # (1, num_frames)
             speech_timestamps = whisper_model.transcribe(audio=audio_np)["segments"]
@@ -172,7 +211,7 @@ def run(args_list=None):
             # ┌───────────────────────────────────────────────┐
             # │          TRANSCRIPTION AND DIARIZATION        │
             # └───────────────────────────────────────────────┘
-            logger.info(f"Transcribing audio: {mix_file_path.name}")
+            LOGGER.info(f"Transcribing audio: {mix_file_path.name}")
             waveform, sample_rate = sf.read(mix_file_path) # waveform shape: (num_frames,)
             waveform = waveform.astype("float32")
 
@@ -190,16 +229,21 @@ def run(args_list=None):
                 end_frame = int(segment["end"] * SAMPLING_RATE)
 
                 # Apply Padding
-                start_frame = max(0, start_frame - pad_frames)
-                end_frame = min(len(waveform), end_frame + pad_frames)
+                # start_frame = max(0, start_frame - pad_frames)
+                # end_frame = min(len(waveform), end_frame + pad_frames)
 
                 # Retrieve audio chunk
                 chunk = waveform[start_frame: end_frame]
 
                 # TRANSCRIPTION
-                transcription = ASR_PIPELINE(chunk)
-                text = transcription["text"].strip()
-
+                text = perform_transcription(
+                    model = model, 
+                    processor = processor, 
+                    audio_chunk = chunk, 
+                    print_beam_results=True,
+                    num_beams=3
+                )
+                
                 # Skip further processing if no text was transcribed
                 if not text:
                     continue
@@ -272,6 +316,5 @@ def run(args_list=None):
             with open(transcript_file_path, "w", encoding="utf-8") as f:
                 f.write("".join(diarized_lines))
                 
-            logger.info(f"Saved transcript for {transcript_file_path}\n\n")
-            
+            LOGGER.info(f"Saved transcript for {transcript_file_path}\n\n")      
 

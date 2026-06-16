@@ -12,8 +12,7 @@ def run(args_list=None):
     # Perform CLI Argument Parsing=================================================
     parser = argparse.ArgumentParser()
     parser.add_argument("--msg", type=str, default="example")
-    # parser.add_argument("--ami_path", type=str, default="./datasets/amicorpus")
-    parser.add_argument("--ami_path", type=str, default="/group/jrwhitehill/amicorpus")
+    parser.add_argument("--ami_path", type=str, default="./datasets/amicorpus")
 
     args, _ = parser.parse_known_args(args_list)
 
