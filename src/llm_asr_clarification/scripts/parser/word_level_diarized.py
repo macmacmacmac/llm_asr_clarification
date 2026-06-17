@@ -4,6 +4,7 @@ from llm_asr_clarification import get_logger
 import xml.etree.ElementTree as ET
 from tqdm.auto import tqdm
 from collections import deque
+import ipdb
 
 # Driver Code
 def run(args_list=None):
@@ -140,11 +141,32 @@ def run(args_list=None):
                 segments.append((speaker, text, start_time, end_time))
                 # segments.append((speaker, text))
 
-        transcript = ""
-
-        for speaker, text, start_time, end_time in segments:
+        transcript_lines = []
+        last_speaker, combined_text, start, end = segments[0]
+        for speaker, text, start_time, end_time in segments[1:]:
             # transcript += f"[Speaker {speaker}]: {text}\n\n"
-            transcript += f"({start_time} - {end_time})[Speaker {speaker}]: {text}\n"
+            # transcript += f"({start_time} - {end_time})[Speaker {speaker}]: {text}\n"
+
+            # If the speaker hasn't changed
+            if speaker == last_speaker:
+                # Combine the texts
+                combined_text += " " + text
+
+                # Merge the timestamps
+                end = end_time
+            
+            # The speaker has changed
+            else:
+                transcript_lines.append(f"({start} - {end})[Speaker {last_speaker}]: {combined_text.strip()}\n")
+                last_speaker = speaker
+                combined_text = text
+                start = start_time
+                end = end_time
+
+        transcript_lines.append(f"({start} - {end})[Speaker {last_speaker}]: {combined_text.strip()}\n")
+
+
+
 
         output_path = os.path.join(
             args.ami_path,
@@ -156,4 +178,4 @@ def run(args_list=None):
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
         with open(output_path, "w", encoding="utf-8") as f:
-            f.write(transcript)
+            f.write("".join(transcript_lines))
