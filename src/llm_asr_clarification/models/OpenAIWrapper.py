@@ -43,7 +43,7 @@ class OpenAIWrapper:
         prompt: str,
         max_retries: int = 5,
         **kwargs,
-    ):
+    ) -> str:
         defaults = {
             "model": "gpt-4o-mini",
         }
