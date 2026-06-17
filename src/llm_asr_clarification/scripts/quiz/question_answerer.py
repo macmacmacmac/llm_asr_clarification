@@ -1,7 +1,7 @@
 import os
 import argparse
 from llm_asr_clarification import get_logger, OpenAIWrapper
-from llm_asr_clarification.models.prompts import QUIZ_ANSWER_GENERATOR_PROMPT
+from llm_asr_clarification.constants.quiz_prompts import QUIZ_ANSWER_GENERATOR_PROMPT
 from tqdm.auto import tqdm
 import ipdb
 import json

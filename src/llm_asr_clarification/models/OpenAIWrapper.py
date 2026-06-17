@@ -2,6 +2,8 @@ from openai import OpenAI, RateLimitError
 from dotenv import load_dotenv
 import os
 import time
+from llm_asr_clarification import get_logger
+from pathlib import Path
 
 load_dotenv()  
 
@@ -21,8 +23,13 @@ class OpenAIWrapper:
         >>> chatgpt = OpenAIWrapper()
         >>> plain_str_answer = chatgpt.prompt_chatgpt(args.prompt)
     """
-    def __init__(self, logger, system_prompt: str = "You are a helpful assistant. Follow the task exactly"):
+    def __init__(self, logger=None, system_prompt: str = "You are a helpful assistant. Follow the task exactly"):
         self.system_prompt = system_prompt
+
+        # Setup logger
+        if logger is None:
+            self.logger = get_logger(Path(__file__).name) 
+        
         self.logger = logger
         
         api_key = os.getenv("OPENAI_API_KEY")

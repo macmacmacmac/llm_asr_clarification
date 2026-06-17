@@ -7,9 +7,7 @@ import re
 class OracleTranscript:
     def __init__(
             self, 
-            meeting_name="ES2005d",
-            dataset_path="./datasets/amicorpus",
-            file_name="parsed_diarized_gt.txt",
+            transcript_path="./datasets/amicorpus/ES2005d/transcripts/parsed_diarized_gt.txt",
             logger=None
         ):
 
@@ -17,8 +15,7 @@ class OracleTranscript:
         if logger is None:
             self.logger = get_logger(Path(__file__).name) 
 
-        # Construct Path of the meeting transcript and read its lines
-        transcript_path = os.path.join(dataset_path, meeting_name, "transcripts", file_name)
+        # Read the transcript using the provided path
         try:
             with open(transcript_path, "r") as f:
                 self.lines = f.readlines()
@@ -27,7 +24,7 @@ class OracleTranscript:
 
         
     def get_oracle_transcription(self, start_time: int, end_time: int):
-        oracle_transcription = ""
+        oracle_lines = []
 
         # For each line
         for line in self.lines:
@@ -38,10 +35,10 @@ class OracleTranscript:
             overlap = max(0, min(oracle_end, end_time) - max(oracle_start, start_time))
 
             if overlap:
-                oracle_transcription += oracle_text
+                oracle_lines.append(oracle_text)
 
         
-        return oracle_transcription
+        return oracle_lines
 
             
     def _extract_content(self, line):
@@ -63,8 +60,8 @@ if __name__ == '__main__':
     oracle_transcript = OracleTranscript()
 
     result = oracle_transcript.get_oracle_transcription(
-        start_time=43,
-        end_time=50
+        start_time=135,
+        end_time=138
     )
 
     print(result)

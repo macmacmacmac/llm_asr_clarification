@@ -1,7 +1,7 @@
 import os
 import argparse
 from llm_asr_clarification import get_logger, OpenAIWrapper
-from llm_asr_clarification.models.prompts import QUIZ_SCORER_PROMPT
+from llm_asr_clarification.constants.quiz_prompts import QUIZ_SCORER_PROMPT
 import xml.etree.ElementTree as ET
 from tqdm.auto import tqdm
 import re
