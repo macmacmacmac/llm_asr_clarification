@@ -136,12 +136,16 @@ def run(args_list=None):
                     text += " " + token["text"]
 
             if text:
-                segments.append((speaker, text))
+                start_time = int(segment_tokens[0]["start"])
+                end_time = int(segment_tokens[-1]["end"])
+                segments.append((speaker, text, start_time, end_time))
+                # segments.append((speaker, text))
 
         transcript = ""
 
-        for speaker, text in segments:
-            transcript += f"[Speaker {speaker}]: {text}\n\n"
+        for speaker, text, start_time, end_time in segments:
+            # transcript += f"[Speaker {speaker}]: {text}\n\n"
+            transcript += f"({start_time} - {end_time})[Speaker {speaker}]: {text}\n"
 
         output_path = os.path.join(
             args.ami_path,
