@@ -217,6 +217,6 @@ def run(args_list=None):
 
             transcript_file_path = os.path.join(transcripts_folder, f"whisper_{WHISPER_SIZE}_diarized_transcript.txt")
             with open(transcript_file_path, "w", encoding="utf-8") as f:
-                f.write("".join(diarized_lines))
+                f.write("".join(diarized_lines).strip())
                 
             logger.info(f"Saved transcript for {transcript_file_path}\n\n")
