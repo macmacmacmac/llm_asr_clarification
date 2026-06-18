@@ -1,5 +1,7 @@
 import torch
 import soundfile as sf
+from pathlib import Path
+from typing import List
 
 def extract_enrollment_embedding(
         audio_path, 
@@ -52,3 +54,13 @@ def extract_enrollment_embedding(
     # Corner case when VAD found 0 speech in the entire audio
     else:
         return None
+    
+
+def get_headset_to_speaker_map(headset_files: List[Path]):
+    headset_files.sort(key=lambda headset_file: headset_file.name)
+    headset_to_speaker_map = {}
+    char = 'A'
+    for headset_file in headset_files:
+        headset_to_speaker_map[headset_file.stem.split('.')[-1]] = f"Speaker {char}"
+        char = chr(ord(char) + 1)
+    return headset_to_speaker_map

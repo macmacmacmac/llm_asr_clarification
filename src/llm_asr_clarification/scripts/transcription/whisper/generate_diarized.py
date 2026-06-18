@@ -9,17 +9,11 @@ from tqdm.contrib.logging import logging_redirect_tqdm
 from speechbrain.inference.speaker import EncoderClassifier
 import torch.nn.functional as F
 import ipdb
-from llm_asr_clarification.utils.diarization_utils import extract_enrollment_embedding
+from llm_asr_clarification.utils.diarization_utils import (
+    extract_enrollment_embedding, get_headset_to_speaker_map
+)
 
 SAMPLING_RATE = 16_000
-
-headset_to_speaker_map = {
-    "Headset-0": "Speaker A",
-    "Headset-1": "Speaker B",
-    "Headset-2": "Speaker C",
-    "Headset-3": "Speaker D"
-}
-
 
 # Driver Code
 def run(args_list=None):
@@ -111,8 +105,11 @@ def run(args_list=None):
             # │               SPEAKER ENROLLMENT              │
             # └───────────────────────────────────────────────┘
             logger.info(f"Extracting enrollment embeddings for {len(headset_files)} speakers...")
-            enrolled_profiles = {}
-            
+            enrolled_profiles = {}  
+
+            # Construct a map of headset to speaker name
+            headset_to_speaker_map = get_headset_to_speaker_map(headset_files)
+
             for headset_file in headset_files:
                 # Use the filename (e.g., "ES2005a.Headset-0") as the speaker label
                 speaker_id = headset_to_speaker_map[headset_file.stem.split('.')[-1]]
