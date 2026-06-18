@@ -19,7 +19,7 @@ GROUND_TRUTH_TRANSCRIPT = "parsed_diarized_gt.txt"
 
 
 # ┌───────────────────────────────────────────────┐
-# │         CLARIFICATION CHOICE STRATEGY         │
+# │                   HELPER METHODS              │
 # └───────────────────────────────────────────────┘
 def extract_timestamps(line):
     # Extract all sequences of digits from the string
@@ -32,23 +32,51 @@ def extract_timestamps(line):
     return start_time, end_time
 
 
-def generate_summary(idx: int, transcript_lines: List[str]):
-    # Get the transcript lines upto idx
-    prefix_text = "".join(transcript_lines[:idx])
+def generate_context(
+        idx: int, 
+        transcript_lines: List[str],
+        ground_truth_transcript_lines: List[str] = None,
+    ):
+    if ground_truth_transcript_lines is None:
+        # Get the transcript lines upto idx
+        prefix_text = "\n".join(transcript_lines[:idx])
 
-    # Prepare the user prompt
-    user_prompt = SUMMARIZER_USER_PROMPT.format(
-        input_meeting_transcription = prefix_text
-    )
+        # Prepare the user prompt
+        user_prompt = SUMMARIZER_USER_PROMPT.format(
+            input_meeting_transcription = prefix_text
+        )
 
-    # Generate summary
-    generated_summary = SUMMARY_MODEL.prompt_chatgpt(
-        prompt = user_prompt,
-        max_tokens=1024
-    )
+        # Generate summary
+        generated_summary = SUMMARY_MODEL.prompt_chatgpt(
+            prompt = user_prompt,
+            max_tokens=1024
+        )
 
-    return generated_summary
+        # Fetch the last 5 most recent lines
+        last_5_lines = "\n".join(transcript_lines[max(0, idx - 5):idx])
 
+        # Construct the context string
+        context = f"\nOVERVIEW:\n{generated_summary}\n\nMOST RECENT LINES:\n{last_5_lines}\n"
+
+        return context
+
+    else:
+        # Get timestamps for the original transcript line
+        start_time, end_time = extract_timestamps(transcript_lines[idx])
+
+        # Fetch Prefix lines from the ground truth
+        gt_prefix_lines = []
+        for line in ground_truth_transcript_lines:
+            gt_start_time, gt_end_time = extract_timestamps(line)
+        
+
+            # If the Ground Truth start time exceeds end time of original transcript line
+            # then break out
+            if gt_start_time > end_time:
+                break
+
+            # Keep appending the lines
+            gt_prefix_lines.append(line)
 
 
 
@@ -70,13 +98,23 @@ def choose_option(idx_pair: Tuple[int], transcript_lines: List[str]):
 def choose_randomly(idx_pair: Tuple):
     return random.choice(idx_pair)
 
-def choose_using_llm(idx_pair: Tuple, transcript_lines: List[str]):
+
+def choose_using_llm(
+        idx_pair: Tuple, 
+        transcript_lines: List[str],
+        ground_truth_transcript_lines: List[str] = None
+    ):
     idx0 = idx_pair[0]
     idx1 = idx_pair[1]
 
-    # Generate Summaries
-    summary0 = generate_summary(idx0, transcript_lines)
-    summary1 = generate_summary(idx1, transcript_lines)
+    # Generate Summaries using original transcript
+    if ground_truth_transcript_lines is None:
+        context0 = generate_context(idx0, transcript_lines)
+        context1 = generate_context(idx1, transcript_lines)
+
+    else:
+        context0 = generate_context(idx0, ground_truth_transcript_lines, is_ground_truth=True)
+        context1 = generate_context(idx1, ground_truth_transcript_lines, is_ground_truth=True)
     
     # Fetch Transcriptions
     transcription0 = transcript_lines[idx0]
@@ -86,11 +124,13 @@ def choose_using_llm(idx_pair: Tuple, transcript_lines: List[str]):
     user_prompt = CHOOSER_USER_PROMPT.format(
         idx0 = idx0,
         idx1 = idx1,
-        context0 = summary0,
-        context1 = summary1,
+        context0 = context0,
+        context1 = context1,
         transcription0 = transcription0,
         transcription1 = transcription1
     )
+
+    # logger.info(user_prompt)
 
     # Ask LLM
     choice_idx = CHOOSER_MODEL.prompt_chatgpt(
@@ -198,6 +238,7 @@ def run(args_list=None):
 
             # For each idx pair
             for idx_pair in random_idx_pairs:
+                # print_timestamps(idx_pair, original_transcript_lines)
 
                 # Choose 1 from the pair
                 chosen_idx = choose_option(idx_pair, original_transcript_lines)
