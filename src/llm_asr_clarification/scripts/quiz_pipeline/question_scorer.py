@@ -104,7 +104,7 @@ def run(args_list=None):
                 f.write(json.dumps(quiz, indent=4))
 
 
-            logger.info("success! answered all the questions")
+            logger.info("success! scored all the questions")
         except AssertionError as e:
             logger.info("Encountered an error")
             logger.error(str(e))
