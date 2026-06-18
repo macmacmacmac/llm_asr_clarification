@@ -95,14 +95,18 @@ def generate_context(
 # ┌───────────────────────────────────────────────┐
 # │         CLARIFICATION CHOICE STRATEGY         │
 # └───────────────────────────────────────────────┘
-def choose_option(idx_pair: Tuple[int], transcript_lines: List[str]):
+def choose_option(
+    idx_pair: Tuple[int], 
+    transcript_lines: List[str],
+    ground_truth_lines: List[str]
+):
     match STRATEGY:
         case "RANDOM":
             return choose_randomly(idx_pair)
         case "LLM-ORIG-CTX":
             return choose_using_llm(idx_pair, transcript_lines)
         case "LLM-GT-CTX":
-            pass
+            return choose_using_llm(idx_pair, transcript_lines, ground_truth_lines)
         case _:
             return choose_randomly(idx_pair)
 
@@ -237,8 +241,15 @@ def run(args_list=None):
                 transcript_path=oracle_transcript_path,
                 logger=logger
             )
+
+            # Fetch all lines of the oracle transcript
+            ground_truth_lines = oracle_transcript.get_lines()
+
+            # Open and Read the generated transcript
             with open(transcript_path, "r") as f:
                 transcript_content = f.read()
+
+            # Maintain two lists, one stores original line and one stores updated lines
             original_transcript_lines = transcript_content.split("\n")
             updated_transcript_lines = original_transcript_lines
 
@@ -253,7 +264,7 @@ def run(args_list=None):
                 # print_timestamps(idx_pair, original_transcript_lines)
 
                 # Choose 1 from the pair
-                chosen_idx = choose_option(idx_pair, original_transcript_lines)
+                chosen_idx = choose_option(idx_pair, original_transcript_lines, ground_truth_lines)
                 chosen_line = original_transcript_lines[chosen_idx]
 
                 # Extract timestamps for the chosen line

@@ -37,8 +37,11 @@ class OracleTranscript:
             if overlap:
                 oracle_lines.append(oracle_text)
 
-        
         return oracle_lines
+    
+
+    def get_lines(self):
+        return self.lines
 
             
     def _extract_content(self, line):
