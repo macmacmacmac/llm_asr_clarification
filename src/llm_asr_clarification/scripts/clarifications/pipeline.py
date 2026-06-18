@@ -35,48 +35,60 @@ def extract_timestamps(line):
 def generate_context(
         idx: int, 
         transcript_lines: List[str],
-        ground_truth_transcript_lines: List[str] = None,
+        ground_truth_lines: List[str] = None,
     ):
-    if ground_truth_transcript_lines is None:
-        # Get the transcript lines upto idx
-        prefix_text = "\n".join(transcript_lines[:idx])
-
-        # Prepare the user prompt
-        user_prompt = SUMMARIZER_USER_PROMPT.format(
-            input_meeting_transcription = prefix_text
-        )
-
-        # Generate summary
-        generated_summary = SUMMARY_MODEL.prompt_chatgpt(
-            prompt = user_prompt,
-            max_tokens=1024
-        )
-
-        # Fetch the last 5 most recent lines
-        last_5_lines = "\n".join(transcript_lines[max(0, idx - 5):idx])
-
-        # Construct the context string
-        context = f"\nOVERVIEW:\n{generated_summary}\n\nMOST RECENT LINES:\n{last_5_lines}\n"
-
-        return context
+    if ground_truth_lines is None:
+        # Use all the lines upto (and not including the line at idx)
+        prefix_lines = transcript_lines[:idx]
 
     else:
         # Get timestamps for the original transcript line
-        start_time, end_time = extract_timestamps(transcript_lines[idx])
+        orig_start_time, orig_end_time = extract_timestamps(transcript_lines[idx])
 
         # Fetch Prefix lines from the ground truth
-        gt_prefix_lines = []
-        for line in ground_truth_transcript_lines:
+        prefix_lines = []
+        for line in ground_truth_lines:
             gt_start_time, gt_end_time = extract_timestamps(line)
         
-
-            # If the Ground Truth start time exceeds end time of original transcript line
+            # If the Ground Truth end time exceeds start time of original transcript line
             # then break out
-            if gt_start_time > end_time:
+            if gt_end_time > orig_start_time:
                 break
 
             # Keep appending the lines
-            gt_prefix_lines.append(line)
+            prefix_lines.append(line)
+
+
+    # Get the transcript lines upto idx
+    prefix_text = "\n".join(prefix_lines)
+
+    # Prepare the user prompt
+    user_prompt = SUMMARIZER_USER_PROMPT.format(
+        input_meeting_transcription = prefix_text
+    )
+
+    # Generate summary
+    generated_summary = SUMMARY_MODEL.prompt_chatgpt(
+        prompt = user_prompt,
+        max_tokens=1024
+    )
+
+    # Fetch the last 5 most recent lines
+    last_5_lines = "\n".join(prefix_lines[max(0, len(prefix_lines) - 5):])
+
+    # Construct the context string
+    context = f"\nOVERVIEW:\n{generated_summary}\n\nMOST RECENT LINES:\n{last_5_lines}\n"
+
+    return context
+
+
+# def print_timestamps(idx_pair: Tuple[int], transcript_lines: List[str]):
+#     logger.info("Processing indices")
+#     for idx in idx_pair:
+#         line = transcript_lines[idx]
+#         start_time, end_time = extract_timestamps(line)
+#         logger.info(f"idx: {idx}, line: {line}, start: {start_time}, end: {end_time}")
+#     logger.info("---")
 
 
 
@@ -102,19 +114,19 @@ def choose_randomly(idx_pair: Tuple):
 def choose_using_llm(
         idx_pair: Tuple, 
         transcript_lines: List[str],
-        ground_truth_transcript_lines: List[str] = None
+        ground_truth_lines: List[str] = None
     ):
     idx0 = idx_pair[0]
     idx1 = idx_pair[1]
 
-    # Generate Summaries using original transcript
-    if ground_truth_transcript_lines is None:
+    # Generate Context using original transcript
+    if ground_truth_lines is None:
         context0 = generate_context(idx0, transcript_lines)
         context1 = generate_context(idx1, transcript_lines)
 
     else:
-        context0 = generate_context(idx0, ground_truth_transcript_lines, is_ground_truth=True)
-        context1 = generate_context(idx1, ground_truth_transcript_lines, is_ground_truth=True)
+        context0 = generate_context(idx0, transcript_lines, ground_truth_lines)
+        context1 = generate_context(idx1, transcript_lines, ground_truth_lines)
     
     # Fetch Transcriptions
     transcription0 = transcript_lines[idx0]
