@@ -107,9 +107,12 @@ def run(args_list=None):
             segment_tokens = []
 
             word = queue.popleft()
+
+            start_time = word['start']
+            end_time = word["end"]
+
             segment_tokens.append(word)
 
-            last_end = word["end"]
 
             SENTENCE_ENDINGS = {".", "?", "!"}
 
@@ -164,8 +167,6 @@ def run(args_list=None):
                 end = end_time
 
         transcript_lines.append(f"({start} - {end})[Speaker {last_speaker}]: {combined_text.strip()}\n")
-
-
 
 
         output_path = os.path.join(

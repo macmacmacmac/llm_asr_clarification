@@ -1,10 +1,11 @@
 import os
 import argparse
 from llm_asr_clarification import get_logger, OpenAIWrapper
-from llm_asr_clarification.constants.quiz_prompts import QUIZ_ANSWER_GENERATOR_PROMPT
+from llm_asr_clarification.constants.quiz_prompts import QUIZ_ANSWER_GENERATOR_SYSTEM_PROMPT, QUIZ_ANSWER_GENERATOR_USER_PROMPT
 from tqdm.auto import tqdm
 import ipdb
 import json
+
 # Driver Code
 def run(args_list=None):
     exp_name = os.path.basename(__file__)
@@ -51,8 +52,6 @@ def run(args_list=None):
         
         logger.info(f"processing: {transcript_path}")
         
-        chatgpt = OpenAIWrapper(logger=logger)
-
         # Read transcript
         with open(transcript_path, "r", encoding="utf-8") as f:
             transcript_text = f.read()
@@ -69,46 +68,47 @@ def run(args_list=None):
         formatted_questions = [f"Question {i}: {q}\n" for i, q in enumerate(questions)]
         formatted_questions = "".join(formatted_questions)
 
-        prompt = QUIZ_ANSWER_GENERATOR_PROMPT.format(
+    
+        system_prompt = QUIZ_ANSWER_GENERATOR_SYSTEM_PROMPT.format(
+            num_questions=num_questions
+        )
+        user_prompt = QUIZ_ANSWER_GENERATOR_USER_PROMPT.format(
             transcript=transcript_text,
             questions=formatted_questions,
             num_questions=num_questions
         )
 
+        chatgpt = OpenAIWrapper(
+            system_prompt=system_prompt,
+            logger=logger
+        )
+
         response_text = chatgpt.prompt_chatgpt(
-            prompt, 
+            user_prompt, 
             # max_tokens=1024,
             max_completion_tokens=1024,
             model=args.model_to_use
         )
 
+        # logger.info(
+        #     f"user_prompt:\n\n{user_prompt}\n\n"
+        #     f"Response: {response_text}"
+        # )
+
         try:
             result = json.loads(response_text)
         except Exception:
             logger.warning(
-                f"Could not parse response. Defaulting to None.\n"
+                f"Could not parse response.\n"
                 f"Response: {response_text}"
             )
-            result = {
-                "answers": None,
-            }
-
         try: 
-            answers = result.get("answers", None)
+            answers = []
+            for i in range(num_questions):
+                answer = result.get(f"question_{i}_answer", "n/a")
+                answers.append(answer)
 
-            assert answers is not None, "'answers' is None"
-
-            # TODO: There is a problem because of which sometimes the LLM returns correct answers but 
-            # misses a single question's answer and this happens for only some meetings, not all.
-            # We need to address this in the future
-
-            # assert (len(answers) == num_questions), f"'answers' has wrong length {len(answers)}"
-            if (len(answers) != num_questions):
-                logger.warning(f"'answers' has wrong length ({len(answers)}), {num_questions} expected.")
-
-            # Reset old answers
-            for qc in question_answers:
-                qc[f'answer_using_{args.transcript_file}'] = None
+            # logger.info(f"raw answers: {answers}")
 
             # Set new answers
             for qc, a in zip(question_answers, answers):
@@ -118,6 +118,7 @@ def run(args_list=None):
                 f.write(json.dumps(question_answers, indent=4))
 
             logger.info("success! Generated answers")
+
         except AssertionError as e:
             logger.info("Encountered an error")
             logger.error(str(e))
