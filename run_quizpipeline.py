@@ -2,7 +2,10 @@ import os
 
 
 transcript_files = [
-    'whisper_tiny_diarized_transcript'
+    # 'whisper_tiny_diarized_transcript',
+    # 'whisper_tiny_diarized_transcript_random_clarify',
+    'whisper_tiny_diarized_transcript_llm-orig-ctx_clarify',
+    'whisper_tiny_diarized_transcript_llm-gt-ctx_clarify',
     # 'qwen_transcript',
     # 'tiny_transcript',
     # 'large_transcript',
@@ -10,8 +13,8 @@ transcript_files = [
     # 'whisper-tiny_transcript'
 ]
 question_files = ['parsed_diarized_gt']
-# MODEL_TO_USE = 'gpt-4o-mini'
-MODEL_TO_USE = 'gpt-5.4-mini'
+MODEL_TO_USE = 'gpt-4o-mini'
+# MODEL_TO_USE = 'gpt-5.4-mini'
 
 
 # for q in question_files:
@@ -30,7 +33,7 @@ MODEL_TO_USE = 'gpt-5.4-mini'
 
 for t in transcript_files:
     for q in question_files:
-        command = f"sbatch -t 30 -o quiz_pipeline.out -e quiz_pipeline.out cpu_job.sh \
+        command = f"sbatch -t 30 -o quiz_{t}.out -e quiz_{t}.out cpu_job.sh \
             --scripts quiz.question_answerer quiz.question_scorer \
             --transcript_file {t} \
             --do_all_meetings \
