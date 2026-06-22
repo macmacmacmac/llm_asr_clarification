@@ -221,6 +221,11 @@ def run(args_list=None):
             # └───────────────────────────────────────────────┘
             LOGGER.info(f"Transcribing audio: {mix_file_path.name}")
             waveform, sample_rate = sf.read(mix_file_path) # waveform shape: (num_frames,)
+
+            # If stereo (shape [frames, channels]), convert to mono by averaging channels
+            if len(waveform.shape) > 1:
+                waveform = waveform.mean(axis=1)
+
             waveform = waveform.astype("float32")
 
             # # Pad by some milliseconds (in frames) for Whisper's acoustic context

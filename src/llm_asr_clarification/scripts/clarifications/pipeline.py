@@ -13,6 +13,7 @@ from llm_asr_clarification.constants.clarification_prompts import (
     SUMMARIZER_SYS_PROMPT, SUMMARIZER_USER_PROMPT,
     CHOOSER_SYS_PROMPT, CHOOSER_USER_PROMPT
 )
+from llm_asr_clarification.constants import SAMPLE_MEETINGS
 
 SAMPLING_RATE = 16_000
 GROUND_TRUTH_TRANSCRIPT = "parsed_diarized_gt.txt"
@@ -175,7 +176,7 @@ def run(args_list=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset-path", type=str, default="./datasets/amicorpus")
     parser.add_argument("--transcript-file", type=str, default="whisper_tiny_diarized_transcript.txt")
-    parser.add_argument("--meeting-name", type=str, default="")
+    parser.add_argument("--do-sample-meetings", type=bool, default=False)
     parser.add_argument("--strategy", type=str, default="RANDOM")
     parser.add_argument("--seed", type=int, default=47)
     
@@ -222,9 +223,13 @@ def run(args_list=None):
         meeting_folders=[DATASET_PATH / args.meeting_name]
     else:
         # Fetch all dataset meeting folders
-        meeting_folders = [f for f in DATASET_PATH.iterdir() 
-                            if (f.is_dir() and 
-                                f.name not in ["ami_public_manual_1.6.2", "xinlu_data"])]
+        # meeting_folders = [f for f in DATASET_PATH.iterdir() 
+        #                     if (f.is_dir() and 
+        #                         f.name not in ["ami_public_manual_1.6.2", "xinlu_data"])]
+        meeting_folders = [f for f in DATASET_PATH.iterdir()
+                          if (f.is_dir() and
+                              f.name in SAMPLE_MEETINGS)]
+        
 
     # Wrap logging with tqdm
     with logging_redirect_tqdm(loggers=[logger]):
@@ -251,7 +256,7 @@ def run(args_list=None):
 
             # Maintain two lists, one stores original line and one stores updated lines
             original_transcript_lines = transcript_content.split("\n")
-            updated_transcript_lines = original_transcript_lines
+            updated_transcript_lines = original_transcript_lines.copy()
 
             # Select 20 random lines
             random_line_idxs = random.choices(range(0, len(original_transcript_lines)), k = 20)
@@ -266,6 +271,9 @@ def run(args_list=None):
                 # Choose 1 from the pair
                 chosen_idx = choose_option(idx_pair, original_transcript_lines, ground_truth_lines)
                 chosen_line = original_transcript_lines[chosen_idx]
+
+                # if meeting_folder.name == "ES2005a":
+                #     ipdb.set_trace()
 
                 # Extract timestamps for the chosen line
                 start_time, end_time = extract_timestamps(chosen_line)
