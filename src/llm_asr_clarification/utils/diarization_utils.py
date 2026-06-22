@@ -2,6 +2,7 @@ import torch
 import soundfile as sf
 from pathlib import Path
 from typing import List
+import ipdb
 
 def extract_enrollment_embedding(
         audio_path, 
@@ -15,8 +16,14 @@ def extract_enrollment_embedding(
     Extracts a reference embedding by using VAD (Voice Activity Detection) to find and concatenate 
     pure speech segments, ignoring all silence and background noise.
     """
-    audio_np, sample_rate = sf.read(audio_path) # waveform shape: (num_frames,)
-    waveform = torch.from_numpy(audio_np).float().unsqueeze(0).to(device)
+    audio_np, sample_rate = sf.read(audio_path) # audio_np shape: (num_frames, num_channels)
+
+    # If audio_np is a stereo file
+    if len(audio_np.shape) > 1:
+        # Flatten to mono
+        audio_np = audio_np.mean(axis=1) # (num_frames,)
+
+    waveform = torch.from_numpy(audio_np).float().unsqueeze(0).to(device) # (num_frames,)
 
     # Get Speech Timestamps using VAD model
     wav_tensor = waveform.squeeze(0)

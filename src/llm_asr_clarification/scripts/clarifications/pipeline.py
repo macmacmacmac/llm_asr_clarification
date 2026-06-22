@@ -251,7 +251,7 @@ def run(args_list=None):
 
             # Maintain two lists, one stores original line and one stores updated lines
             original_transcript_lines = transcript_content.split("\n")
-            updated_transcript_lines = original_transcript_lines
+            updated_transcript_lines = original_transcript_lines.copy()
 
             # Select 20 random lines
             random_line_idxs = random.choices(range(0, len(original_transcript_lines)), k = 20)
@@ -267,8 +267,9 @@ def run(args_list=None):
                 chosen_idx = choose_option(idx_pair, original_transcript_lines, ground_truth_lines)
                 chosen_line = original_transcript_lines[chosen_idx]
 
-                # if meeting_folder.name == "TS3008a":
+                # if meeting_folder.name == "ES2005a":
                 #     ipdb.set_trace()
+
                 # Extract timestamps for the chosen line
                 start_time, end_time = extract_timestamps(chosen_line)
                 
