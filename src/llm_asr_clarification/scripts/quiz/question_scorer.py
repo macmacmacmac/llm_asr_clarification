@@ -8,6 +8,7 @@ import re
 import ast
 import ipdb
 import json
+from filelock import FileLock
 
 # Driver Code
 def run(args_list=None):
@@ -100,8 +101,10 @@ def run(args_list=None):
             for qca, s in zip(quiz, scores):
                 qca[f"score_using_{args.transcript_file}"] = s
             
-            with open(question_path, "w", encoding="utf-8") as f:
-                f.write(json.dumps(quiz, indent=4))
+            lock = FileLock(f"{question_path}.lock")
+            with lock:
+                with open(question_path, "w", encoding="utf-8") as f:
+                    f.write(json.dumps(quiz, indent=4))
 
 
             logger.info("success! scored all the questions")
