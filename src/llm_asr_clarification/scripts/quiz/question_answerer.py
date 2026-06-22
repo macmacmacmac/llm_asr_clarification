@@ -6,6 +6,8 @@ from tqdm.auto import tqdm
 import ipdb
 import json
 from filelock import FileLock
+from llm_asr_clarification.constants import SAMPLE_MEETINGS
+
 
 # Driver Code
 def run(args_list=None):
@@ -20,7 +22,7 @@ def run(args_list=None):
     parser.add_argument("--question_file", type=str, default="parsed_diarized_gt")
     parser.add_argument("--do_all_meetings", action="store_true")
     parser.set_defaults(do_all_meetings=False)
-    parser.add_argument("--meeting_to_do", type=str, default="./datasets/amicorpus/ES2005d")
+    
 
     args, _ = parser.parse_known_args(args_list)
 
@@ -45,7 +47,7 @@ def run(args_list=None):
     if args.do_all_meetings:
         meeting_paths = [entry.path for entry in os.scandir(args.ami_path) if entry.name not in ['ami_public_manual_1.6.2', 'xinlu_data']]
     else:
-        meeting_paths = [args.meeting_to_do]
+        meeting_paths = [entry.path for entry in os.scandir(args.ami_path) if entry.name in SAMPLE_MEETINGS]
     
     for meeting_path in tqdm(meeting_paths):
         transcript_path = os.path.join(meeting_path, "transcripts", f"{args.transcript_file}.txt")
