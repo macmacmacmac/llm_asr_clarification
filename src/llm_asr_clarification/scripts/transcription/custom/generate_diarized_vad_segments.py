@@ -11,22 +11,17 @@ import transformers
 from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq
 from speechbrain.inference.speaker import EncoderClassifier
 import torch.nn.functional as F
-from llm_asr_clarification.utils.diarization_utils import extract_enrollment_embedding
-import whisper
+from llm_asr_clarification.utils.diarization_utils import (
+    extract_enrollment_embedding, get_headset_to_speaker_map
+)
+from llm_asr_clarification.utils.transcription_utils import merge_timestamps
+
 
 # Completely mute all warnings
 transformers.logging.set_verbosity_error()
 
 # Global Variables
 SAMPLING_RATE = 16_000
-
-
-headset_to_speaker_map = {
-    "Headset-0": "Speaker A",
-    "Headset-1": "Speaker B",
-    "Headset-2": "Speaker C",
-    "Headset-3": "Speaker D"
-}
 
 
 def perform_transcription(
@@ -53,7 +48,7 @@ def perform_transcription(
             **inputs,
             num_beams=num_beams,
             num_return_sequences=num_beams,
-            temperature = 0.5,
+            temperature = 0.1,
             do_sample = True
         )
 
@@ -141,8 +136,8 @@ def run(args_list=None):
         low_cpu_mem_usage=True
     )
 
-    model.generation_config.language = "en"
-    model.generation_config.task = "transcribe"
+    # model.generation_config.language = "en"
+    # model.generation_config.task = "transcribe"
 
     # Load Voice Activity Detection (VAD) Model
     LOGGER.info("Loading Silero VAD Model...")
@@ -183,6 +178,9 @@ def run(args_list=None):
             # └───────────────────────────────────────────────┘
             LOGGER.info(f"Extracting enrollment embeddings for {len(headset_files)} speakers...")
             enrolled_profiles = {}
+
+            # Construct a map of headset to speaker name
+            headset_to_speaker_map = get_headset_to_speaker_map(headset_files)
             
             for headset_file in headset_files:
                 # Use the filename (e.g., "ES2005a.Headset-0") as the speaker label
@@ -203,11 +201,23 @@ def run(args_list=None):
             # │          TRANSCRIPTION AND DIARIZATION        │
             # └───────────────────────────────────────────────┘
             LOGGER.info(f"Transcribing audio: {mix_file_path.name}")
-            waveform, sample_rate = sf.read(mix_file_path) # waveform shape: (num_frames,)
+            waveform, sample_rate = sf.read(mix_file_path) # waveform shape: (num_frames, num_channels)
+
+            # If stereo (shape [frames, channels]), convert to mono by averaging channels
+            if len(waveform.shape) > 1:
+                waveform = waveform.mean(axis=1)
+
             waveform = waveform.astype("float32")
 
-            # # Pad by some milliseconds (in frames) for Whisper's acoustic context
-            # pad_frames = int(0.1 * SAMPLING_RATE)
+            # Convert numpy array to torch tensor for Silero VAD
+            wav_tensor = torch.from_numpy(waveform).to(DEVICE)
+
+            # Get Speech timestamps
+            speech_timestamps = get_speech_timestamps(wav_tensor, vad_model, sampling_rate=sample_rate)
+
+            # Merge speech timestamps together into LLM-friendly chunks
+            # merged_timestamps = merge_timestamps(speech_timestamps, sample_rate)
+
 
             # Diarization variables
             speaker_separated_data = []
@@ -216,12 +226,8 @@ def run(args_list=None):
             for segment in tqdm(speech_timestamps, desc="Transcribing"):
 
                 # Extract Start and End Frame
-                start_frame = int(segment["start"] * SAMPLING_RATE)
-                end_frame = int(segment["end"] * SAMPLING_RATE)
-
-                # Apply Padding
-                # start_frame = max(0, start_frame - pad_frames)
-                # end_frame = min(len(waveform), end_frame + pad_frames)
+                start_frame = segment["start"]
+                end_frame = segment["end"]
 
                 # Retrieve audio chunk
                 chunk = waveform[start_frame: end_frame]
