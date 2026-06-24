@@ -149,6 +149,8 @@ def choose_using_llm(
     xml_response = CHOOSER_MODEL.prompt_chatgpt(
         prompt = user_prompt
     )
+    # logger.info(f"Prompt: \n{user_prompt}")
+    # logger.info(f"LLM: \n{xml_response}")
 
     # Parse XML Tags using Regex
     try:
@@ -276,6 +278,12 @@ def run(args_list=None):
 
                 # Choose 1 from the pair
                 chosen_idx = choose_option(idx_pair, original_transcript_lines, ground_truth_lines)
+
+                # Choose the other option, not chosen by the LLM
+                for idx in idx_pair:
+                    if idx != chosen_idx:
+                        chosen_idx = idx
+                
                 chosen_line = original_transcript_lines[chosen_idx]
 
                 # if meeting_folder.name == "ES2005a":
