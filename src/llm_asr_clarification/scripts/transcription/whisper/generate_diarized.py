@@ -80,7 +80,7 @@ def run(args_list=None):
     if args.meeting_name:
         meeting_folders=[DATASET_PATH / args.meeting_name]
     elif args.do_sample_meetings:
-        # Fetch all dataset meeting folders
+        # Fetch all dataset meeting folders which are in SAMPLE_MEETINGS
         meeting_folders = [f for f in DATASET_PATH.iterdir() 
                             if (f.is_dir() and 
                                 f.name in SAMPLE_MEETINGS)]
