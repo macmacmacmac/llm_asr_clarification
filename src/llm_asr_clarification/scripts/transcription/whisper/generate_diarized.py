@@ -232,7 +232,7 @@ def run(args_list=None):
             for data in speaker_separated_data:
                 diarized_lines.append(f"({data["start"]} - {data["end"]})[{data["speaker"]}]: {data["text"].strip()}[{data["confidence"]}]\n\n")
 
-            transcript_file_path = os.path.join(transcripts_folder, f"whisper_{WHISPER_SIZE}_diarized_transcript.txt")
+            transcript_file_path = os.path.join(transcripts_folder, f"whisper_{WHISPER_SIZE}_diarized_transcript_confidence.txt")
             with open(transcript_file_path, "w", encoding="utf-8") as f:
                 f.write("".join(diarized_lines).strip())
                 
