@@ -3,11 +3,11 @@ import os
 
 transcript_files = [
     # 'whisper_tiny_diarized_transcript',
-    # 'whisper_tiny_diarized_transcript_random_clarify',
-    # 'whisper_tiny_diarized_transcript_llm-orig-ctx_clarify',
-    # 'whisper_tiny_diarized_transcript_llm-gt-ctx_clarify',
-    'whisper_tiny_diarized_transcript_llm-orig-ctx_clarify_sample2',
-    'whisper_tiny_diarized_transcript_llm-gt-ctx_clarify_sample2',
+    'whisper_tiny_diarized_transcript_random_clarify',
+    'whisper_tiny_diarized_transcript_llm-orig-ctx_clarify',
+    'whisper_tiny_diarized_transcript_llm-gt-ctx_clarify',
+    # 'whisper_tiny_diarized_transcript_llm-orig-ctx_clarify_sample2',
+    # 'whisper_tiny_diarized_transcript_llm-gt-ctx_clarify_sample2',
     # 'qwen_transcript',
     # 'tiny_transcript',
     # 'large_transcript',

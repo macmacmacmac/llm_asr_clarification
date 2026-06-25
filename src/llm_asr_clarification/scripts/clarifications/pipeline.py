@@ -265,8 +265,7 @@ def run(args_list=None):
             original_transcript_lines = transcript_content.split("\n")
             updated_transcript_lines = original_transcript_lines.copy()
 
-            # Select 20 random lines
-            # random_line_idxs = random.choices(range(0, len(original_transcript_lines)), k = 20)
+            # Select 20 random lines (without replacement)
             random_line_idxs = random.sample(range(0, len(original_transcript_lines)), k=20)
             
             # Group them into 10 Pairs
@@ -280,9 +279,9 @@ def run(args_list=None):
                 chosen_idx = choose_option(idx_pair, original_transcript_lines, ground_truth_lines)
 
                 # Choose the other option, not chosen by the LLM
-                for idx in idx_pair:
-                    if idx != chosen_idx:
-                        chosen_idx = idx
+                # for idx in idx_pair:
+                #     if idx != chosen_idx:
+                #         chosen_idx = idx
                 
                 chosen_line = original_transcript_lines[chosen_idx]
 
@@ -309,7 +308,8 @@ def run(args_list=None):
             # ┌───────────────────────────────────────────────┐
             # │                     SAVE                      │
             # └───────────────────────────────────────────────┘
-            clarified_file_name = TRANSCRIPT_FILE.split(".")[0] + f"_{STRATEGY.lower()}_clarify_sample2.txt"
+            clarified_file_name = TRANSCRIPT_FILE.split(".")[0] + f"_{STRATEGY.lower()}_clarify.txt"
+            # clarified_file_name = TRANSCRIPT_FILE.split(".")[0] + f"_{STRATEGY.lower()}_clarify_sample2.txt"
             fixed_transcript_file_path = meeting_folder / "transcripts" / clarified_file_name
             with open(fixed_transcript_file_path, "w", encoding="utf-8") as f:
                 f.write("\n".join(updated_transcript_lines))
