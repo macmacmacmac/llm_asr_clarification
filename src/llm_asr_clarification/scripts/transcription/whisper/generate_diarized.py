@@ -13,6 +13,7 @@ from llm_asr_clarification.utils.diarization_utils import (
     extract_enrollment_embedding, get_headset_to_speaker_map
 )
 import math
+from llm_asr_clarification.constants import SAMPLE_MEETINGS
 
 SAMPLING_RATE = 16_000
 
@@ -25,6 +26,7 @@ def run(args_list=None):
     parser.add_argument("--whisper-size", type=str, default="tiny")
     parser.add_argument("--dataset-path", type=str, default="./datasets/amicorpus")
     parser.add_argument("--meeting-name", type=str, default="")
+    parser.add_argument("--do-sample-meetings", action="store_true")
     parser.add_argument("--seed", type=int, default=47)
     
     args, _ = parser.parse_known_args(args_list)
@@ -77,6 +79,11 @@ def run(args_list=None):
     # └───────────────────────────────────────────────┘
     if args.meeting_name:
         meeting_folders=[DATASET_PATH / args.meeting_name]
+    elif args.do_sample_meetings:
+        # Fetch all dataset meeting folders
+        meeting_folders = [f for f in DATASET_PATH.iterdir() 
+                            if (f.is_dir() and 
+                                f.name in SAMPLE_MEETINGS)]
     else:
         # Fetch all dataset meeting folders
         meeting_folders = [f for f in DATASET_PATH.iterdir() 
