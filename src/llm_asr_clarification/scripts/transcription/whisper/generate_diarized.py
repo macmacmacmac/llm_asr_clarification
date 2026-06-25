@@ -12,6 +12,7 @@ import ipdb
 from llm_asr_clarification.utils.diarization_utils import (
     extract_enrollment_embedding, get_headset_to_speaker_map
 )
+import math
 
 SAMPLING_RATE = 16_000
 
@@ -148,6 +149,10 @@ def run(args_list=None):
                 seg_start = segment["start"]
                 seg_end = segment["end"]
                 text = segment["text"].strip()
+                avg_logprob = segment["avg_logprob"]
+
+                # Convert log probability to a standard 0-100% score
+                confidence = math.exp(avg_logprob) * 100
                 
                 start_frame = int(seg_start * SAMPLING_RATE)
                 end_frame = int(seg_end * SAMPLING_RATE)
@@ -180,40 +185,45 @@ def run(args_list=None):
                     "speaker": best_speaker,
                     "text": text,
                     "start": int(seg_start),
-                    "end": int(seg_end)
+                    "end": int(seg_end),
+                    "confidence": f"{confidence:.2f}"
                 })
 
             # ┌───────────────────────────────────────────────┐
             # │                FORMAT & SAVE                  │
             # └───────────────────────────────────────────────┘
             diarized_lines = []
-            if speaker_separated_data:
 
-                # Use the first data as the initial point
-                last_speaker = speaker_separated_data[0]["speaker"]
-                combined_text = speaker_separated_data[0]["text"]
-                start = speaker_separated_data[0]["start"]
-                end = speaker_separated_data[0]["end"]
+            # Merging Consecutive speakers
+            # # Use the first data as the initial point
+            # last_speaker = speaker_separated_data[0]["speaker"]
+            # combined_text = speaker_separated_data[0]["text"]
+            # start = speaker_separated_data[0]["start"]
+            # end = speaker_separated_data[0]["end"]
 
 
-                for data in speaker_separated_data[1:]:
-                    # If the speaker hasn't changed
-                    if data["speaker"] == last_speaker:
-                        # Combine the texts
-                        combined_text += " " + data["text"]
+            # for data in speaker_separated_data[1:]:
+            #     # If the speaker hasn't changed
+            #     if data["speaker"] == last_speaker:
+            #         # Combine the texts
+            #         combined_text += " " + data["text"]
 
-                        # Merge the timestamps
-                        end = data["end"]
-                    
-                    # The speaker has changed
-                    else:
-                        diarized_lines.append(f"({start} - {end})[{last_speaker}]: {combined_text.strip()}\n")
-                        last_speaker = data["speaker"]
-                        combined_text = data["text"]
-                        start = data["start"]
-                        end = data["end"]
+            #         # Merge the timestamps
+            #         end = data["end"]
+                
+            #     # The speaker has changed
+            #     else:
+            #         diarized_lines.append(f"({start} - {end})[{last_speaker}]: {combined_text.strip()}\n")
+            #         last_speaker = data["speaker"]
+            #         combined_text = data["text"]
+            #         start = data["start"]
+            #         end = data["end"]
 
-                diarized_lines.append(f"({start} - {end})[{last_speaker}]: {combined_text.strip()}\n")
+            # diarized_lines.append(f"({start} - {end})[{last_speaker}]: {combined_text.strip()}\n")
+
+
+            for data in speaker_separated_data:
+                diarized_lines.append(f"({data["start"]} - {data["end"]})[{data["speaker"]}]: {data["text"].strip()}[{data["confidence"]}]\n\n")
 
             transcript_file_path = os.path.join(transcripts_folder, f"whisper_{WHISPER_SIZE}_diarized_transcript.txt")
             with open(transcript_file_path, "w", encoding="utf-8") as f:
