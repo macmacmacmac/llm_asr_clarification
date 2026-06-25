@@ -124,14 +124,9 @@ def choose_using_llm(
     idx0 = idx_pair[0]
     idx1 = idx_pair[1]
 
-    # Generate Context using original transcript
-    if ground_truth_lines is None:
-        context0 = generate_context(idx0, transcript_lines)
-        context1 = generate_context(idx1, transcript_lines)
-
-    else:
-        context0 = generate_context(idx0, transcript_lines, ground_truth_lines)
-        context1 = generate_context(idx1, transcript_lines, ground_truth_lines)
+    # Generate Context strings
+    context0 = generate_context(idx0, transcript_lines, ground_truth_lines)
+    context1 = generate_context(idx1, transcript_lines, ground_truth_lines)
     
     # Fetch Transcriptions
     transcription0 = transcript_lines[idx0]
@@ -150,20 +145,32 @@ def choose_using_llm(
     # logger.info(user_prompt)
 
     # Ask LLM
-    choice_idx = CHOOSER_MODEL.prompt_chatgpt(
+    # Fetch Raw XML response
+    xml_response = CHOOSER_MODEL.prompt_chatgpt(
         prompt = user_prompt
     )
+    # logger.info(f"Prompt: \n{user_prompt}")
+    # logger.info(f"LLM: \n{xml_response}")
 
-    # Convert to int
+    # Parse XML Tags using Regex
     try:
-        choice_idx = int(choice_idx)
-        if choice_idx not in idx_pair:
-            logger.warning(f"LLM chose an idx not part of the idx_pair: {idx_pair}! Defaulting to idx_pair[0].")
-            choice_idx = idx_pair[0]
+        choice_match = re.search(r"<choice>\s*(\d+)\s*</choice>", xml_response, re.IGNORECASE)
+        if choice_match:
+            choice_idx = int(choice_match.group(1))
+            
+            # Guard rail against hallucinated index selections
+            if choice_idx not in idx_pair:
+                logger.warning(f"LLM hallucinated index {choice_idx} outside of pair {idx_pair}. Defaulting to first index.")
+                # Safe deterministic fallback
+                return idx0
+            
+        else:
+            logger.warning("Failed to find structural <choice> tags in response. Falling back.")
+            
     except Exception as err:
-        logger.error(f"Error occurred while parsing choice_idx into a int: {err}")
+        logger.error(f"Error occurred while parsing choice from XML: {err}")
 
-
+    
     return choice_idx
 
 
@@ -176,7 +183,7 @@ def run(args_list=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset-path", type=str, default="./datasets/amicorpus")
     parser.add_argument("--transcript-file", type=str, default="whisper_tiny_diarized_transcript.txt")
-    parser.add_argument("--do-sample-meetings", type=bool, default=False)
+    parser.add_argument("--do-sample-meetings", action="store_true")
     parser.add_argument("--strategy", type=str, default="RANDOM")
     parser.add_argument("--seed", type=int, default=47)
     
@@ -219,16 +226,16 @@ def run(args_list=None):
     # ┌───────────────────────────────────────────────┐
     # │                   LOAD DATA                   │
     # └───────────────────────────────────────────────┘
-    if args.meeting_name:
-        meeting_folders=[DATASET_PATH / args.meeting_name]
-    else:
-        # Fetch all dataset meeting folders
-        # meeting_folders = [f for f in DATASET_PATH.iterdir() 
-        #                     if (f.is_dir() and 
-        #                         f.name not in ["ami_public_manual_1.6.2", "xinlu_data"])]
+    if args.do_sample_meetings:
         meeting_folders = [f for f in DATASET_PATH.iterdir()
                           if (f.is_dir() and
                               f.name in SAMPLE_MEETINGS)]
+    else:
+        # Fetch all dataset meeting folders
+        meeting_folders = [f for f in DATASET_PATH.iterdir() 
+                            if (f.is_dir() and 
+                                f.name not in ["ami_public_manual_1.6.2", "xinlu_data"])]
+        
         
 
     # Wrap logging with tqdm
@@ -258,8 +265,8 @@ def run(args_list=None):
             original_transcript_lines = transcript_content.split("\n")
             updated_transcript_lines = original_transcript_lines.copy()
 
-            # Select 20 random lines
-            random_line_idxs = random.choices(range(0, len(original_transcript_lines)), k = 20)
+            # Select 20 random lines (without replacement)
+            random_line_idxs = random.sample(range(0, len(original_transcript_lines)), k=20)
             
             # Group them into 10 Pairs
             random_idx_pairs = list(zip(random_line_idxs[::2], random_line_idxs[1::2]))
@@ -270,6 +277,12 @@ def run(args_list=None):
 
                 # Choose 1 from the pair
                 chosen_idx = choose_option(idx_pair, original_transcript_lines, ground_truth_lines)
+
+                # Choose the other option, not chosen by the LLM
+                # for idx in idx_pair:
+                #     if idx != chosen_idx:
+                #         chosen_idx = idx
+                
                 chosen_line = original_transcript_lines[chosen_idx]
 
                 # if meeting_folder.name == "ES2005a":
@@ -296,6 +309,7 @@ def run(args_list=None):
             # │                     SAVE                      │
             # └───────────────────────────────────────────────┘
             clarified_file_name = TRANSCRIPT_FILE.split(".")[0] + f"_{STRATEGY.lower()}_clarify.txt"
+            # clarified_file_name = TRANSCRIPT_FILE.split(".")[0] + f"_{STRATEGY.lower()}_clarify_sample2.txt"
             fixed_transcript_file_path = meeting_folder / "transcripts" / clarified_file_name
             with open(fixed_transcript_file_path, "w", encoding="utf-8") as f:
                 f.write("\n".join(updated_transcript_lines))
