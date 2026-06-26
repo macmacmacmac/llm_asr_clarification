@@ -10,7 +10,7 @@ from llm_asr_clarification.models import OracleTranscript, OpenAIWrapper
 from typing import Tuple, List
 import re
 from llm_asr_clarification.constants.clarification_prompts import (
-    SUMMARIZER_SYS_PROMPT, SUMMARIZER_USER_PROMPT,
+    SUMMARIZER_SYS_PROMPT, SUMMARIZER_USER_PROMPT_TEMPLATE,
     CHOOSER_SYS_PROMPT, CHOOSER_USER_PROMPT
 )
 from llm_asr_clarification.constants import SAMPLE_MEETINGS
@@ -64,7 +64,7 @@ def generate_context(
     prefix_text = "\n".join(prefix_lines)
 
     # Prepare the user prompt
-    user_prompt = SUMMARIZER_USER_PROMPT.format(
+    user_prompt = SUMMARIZER_USER_PROMPT_TEMPLATE.format(
         input_meeting_transcription = prefix_text
     )
 

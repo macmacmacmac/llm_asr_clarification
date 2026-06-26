@@ -11,7 +11,7 @@ Return a single summary parapraph. Do NOT output anything else or any preamble.
 ONLY output response in the above format.
 """
 
-SUMMARIZER_USER_PROMPT = """
+SUMMARIZER_USER_PROMPT_TEMPLATE = """
 # Input Meeting Transcription:
 
 {input_meeting_transcription}

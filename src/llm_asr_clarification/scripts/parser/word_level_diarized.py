@@ -145,28 +145,31 @@ def run(args_list=None):
                 # segments.append((speaker, text))
 
         transcript_lines = []
-        last_speaker, combined_text, start, end = segments[0]
-        for speaker, text, start_time, end_time in segments[1:]:
+        # last_speaker, combined_text, start, end = segments[0]
+        # for speaker, text, start_time, end_time in segments[1:]:
             # transcript += f"[Speaker {speaker}]: {text}\n\n"
             # transcript += f"({start_time} - {end_time})[Speaker {speaker}]: {text}\n"
 
-            # If the speaker hasn't changed
-            if speaker == last_speaker:
-                # Combine the texts
-                combined_text += " " + text
+            # # If the speaker hasn't changed
+            # if speaker == last_speaker:
+            #     # Combine the texts
+            #     combined_text += " " + text
 
-                # Merge the timestamps
-                end = end_time
+            #     # Merge the timestamps
+            #     end = end_time
             
-            # The speaker has changed
-            else:
-                transcript_lines.append(f"({start} - {end})[Speaker {last_speaker}]: {combined_text.strip()}\n")
-                last_speaker = speaker
-                combined_text = text
-                start = start_time
-                end = end_time
+            # # The speaker has changed
+            # else:
+            #     transcript_lines.append(f"({start} - {end})[Speaker {last_speaker}]: {combined_text.strip()}\n")
+            #     last_speaker = speaker
+            #     combined_text = text
+            #     start = start_time
+            #     end = end_time
 
-        transcript_lines.append(f"({start} - {end})[Speaker {last_speaker}]: {combined_text.strip()}\n")
+        # transcript_lines.append(f"({start} - {end})[Speaker {last_speaker}]: {combined_text.strip()}\n")
+
+        for speaker, text, start_time, end_time in segments:
+            transcript_lines.append(f"({start_time} - {end_time})[Speaker {speaker}]: {text}\n")
 
 
         output_path = os.path.join(
