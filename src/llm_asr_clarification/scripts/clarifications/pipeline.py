@@ -15,7 +15,7 @@ from llm_asr_clarification.constants.clarification_prompts import (
 )
 from llm_asr_clarification.constants import SAMPLE_MEETINGS
 
-SAMPLING_RATE = 16_000
+
 GROUND_TRUTH_TRANSCRIPT = "parsed_diarized_gt.txt"
 
 
