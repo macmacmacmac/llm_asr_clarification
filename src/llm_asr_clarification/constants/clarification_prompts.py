@@ -90,12 +90,52 @@ Excerpt 49 contains a minor phonetic error ("chews day" instead of "Tuesday") th
 """
 
 CHOOSER_USER_PROMPT = """
-# EXCERPT {idx0}
+# FIRST EXCERPT ID: {idx0}
 CONTEXT: {context0}
 TRANSCRIPTION: {transcription0}
 
-# EXCERPT {idx1}
+# SECOND EXCERPT ID: {idx1}
 CONTEXT: {context1}
+TRANSCRIPTION: {transcription1}
+
+Output:
+"""
+
+
+CHOOSER_SYS_PROMPT_NO_CTX = """
+# TASK DESCRIPTION:
+You are an expert at identifying important meeting transcriptions errors. You will be given two transcription 
+excerpts. You task is to choose which of the two transcriptions to
+'clarify.' When a transcription is 'clarified,' all the mistranscription errors, if there are any, is corrected.
+
+Because you can only choose one out of the two transcription excerpts to clarify, you should choose the one
+which is more important and has more mistranscriptions. For instance, if a transcription has a lot of errors, but
+is talking about something trivial like lunch, it may not be worth clarifying. Conversely, if a transcription is 
+important, but has almost no errors, then you wouldn't gain any additional information from the clarification. 
+
+You should choose to clarify the transcription that is most important and has the most errors of the two. 
+
+The two transcription excerpts will be provided in the following format:
+
+# FIRST EXCERPT ID: <id>
+TRANSCRIPTION: <transcription>
+
+# FIRST EXCERPT ID: <id>
+TRANSCRIPTION: <transcription>
+
+Choose which excerpt is more important and has more errors to clarify by replying with its ID. 
+
+# IMPORTANT:
+You should only output a single number corresponding to the ID. 
+Do not output any preamble, explanation, or anything else.
+ONLY reply with the ID of your chosen excerpt.
+"""
+
+CHOOSER_USER_PROMPT_NO_CTX = """
+# FIRST EXCERPT ID: {idx0}
+TRANSCRIPTION: {transcription0}
+
+# SECOND EXCERPT ID: {idx1}
 TRANSCRIPTION: {transcription1}
 
 Output:

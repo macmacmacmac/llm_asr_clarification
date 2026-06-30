@@ -18,7 +18,7 @@ def run(args_list=None):
     parser.add_argument("--msg", type=str, default="example")
     parser.add_argument("--model_to_use", type=str, default="gpt-4o-mini")
     parser.add_argument("--ami_path", type=str, default="./datasets/amicorpus")
-    parser.add_argument("--transcript_file", type=str, default="qwen_transcript")
+    parser.add_argument("--transcript_file", type=str, default="whisper_tiny_diarized_transcript")
     parser.add_argument("--question_file", type=str, default="parsed_diarized_gt")
     parser.add_argument("--do_all_meetings", action="store_true")
     parser.set_defaults(do_all_meetings=False)
@@ -51,7 +51,7 @@ def run(args_list=None):
     
     for meeting_path in tqdm(meeting_paths):
         transcript_path = os.path.join(meeting_path, "transcripts", f"{args.transcript_file}.txt")
-        question_path = os.path.join(meeting_path, "transcripts", f"quiz_from_{args.question_file}.json")
+        question_path = os.path.join(meeting_path, "quiz", f"quiz_from_{args.question_file}.json")
         
         logger.info(f"processing: {transcript_path}")
         
@@ -59,10 +59,14 @@ def run(args_list=None):
         with open(transcript_path, "r", encoding="utf-8") as f:
             transcript_text = f.read()
         
-        # Read question
-        with open(question_path, "r", encoding="utf-8") as f:
-            question_answers = f.read()
-
+        # In case question gen failed earlier
+        try:
+            # Read question
+            with open(question_path, "r", encoding="utf-8") as f:
+                question_answers = f.read()
+        except Exception as e:
+            logger.error(f"Something failed, couldnt read question file: {e}")
+            continue 
         question_answers = json.loads(question_answers)
         questions = [qa['question'] for qa in question_answers]
         correct_answers = [qa['correct_answer'] for qa in question_answers]
