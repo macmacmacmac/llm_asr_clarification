@@ -20,41 +20,124 @@ SUMMARIZER_USER_PROMPT = """
 """
 
 
+# CHOOSER_SYS_PROMPT = """
+# # TASK DESCRIPTION:
+# You are an expert at identifying important meeting transcriptions errors. You will be given two transcription 
+# excerpts and their related previous context. You task is to choose which of the two transcriptions to
+# 'clarify.' When a transcription is 'clarified,' all the mistranscription errors, if there are any, is corrected.
+
+# Because you can only choose one out of the two transcription excerpts to clarify, you should choose the one
+# which is more important and has more mistranscriptions. For instance, if a transcription has a lot of errors, but
+# is talking about something trivial like lunch, it may not be worth clarifying. Conversely, if a transcription is 
+# important, but has almost no errors, then you wouldn't gain any additional information from the clarification. 
+
+# You should choose to clarify the transcription that is most important and has the most errors of the two. 
+
+# The two transcription excerpts will be provided in the following format:
+
+# # FIRST EXCERPT ID: <id>
+# CONTEXT: <context>
+# TRANSCRIPTION: <transcription>
+
+# # FIRST EXCERPT ID: <id>
+# CONTEXT: <context>
+# TRANSCRIPTION: <transcription>
+
+# Choose which excerpt is more important and has more errors to clarify by replying with its ID. 
+
+# # IMPORTANT:
+# You should only output a single number corresponding to the ID. 
+# Do not output any preamble, explanation, or anything else.
+# ONLY reply with the ID of your chosen excerpt.
+# """
 CHOOSER_SYS_PROMPT = """
 # TASK DESCRIPTION:
-You are an expert at processing meeting transcriptions. You will be given two transcription excerpts and their related previous context.
-There may be some transcription errors in both these transcriptions. You may choose only one transcription of the two to "clarify". This
-will remove all the errors, if there are any. 
-Your task is to determine which of the two transcription excerpts, when chosen to be clarified, will give more information related to the meeting.
-Specifically, you should choose the excerpt which is important AND has critical transcription errors that needs clarification.
-Your choice will be passed to a clarification system, which will improve the quality of the excerpt.
+You are an AI assistant optimizing live meeting transcriptions. Your goal is to prevent "alert fatigue" by only asking meeting attendees to clarify transcription errors that actually matter.
+
+You will evaluate two transcription excerpts (along with their preceding context). Your task is to choose the ONE excerpt that is most worth interrupting the user to clarify.
+
+# EVALUATION CRITERIA:
+To decide which excerpt wins, weigh the following:
+1. Information Value: Does the sentence contain actionable or highly specific information? (e.g., action items, deadlines, names, numbers, technical decisions).
+2. Error Severity: Is the transcription error confusing, contradictory, or masking key information?
+3. Contextual Recoverability: Can a human easily guess what the garbled text was supposed to say based on the context? If yes, it is NOT worth clarifying.
+
+# OUTPUT FORMAT:
+You must output your response in the following format:
+<reasoning>
+Briefly compare the two excerpts based on the criteria above.
+</reasoning>
+<choice>
+[Insert only the winning excerpt number here]
+</choice>
 
 # EXAMPLE:
-Given excerpts 49 and 108 with following contents and contexts:
-# EXCERPT 49: 
-CONTEXT: "Context for Excerpt 49"
-TRANSCRIPTION: "A very important transcription excerpt with no / minimal transcription errors"
+Given excerpts 49 and 108.
 
-# EXCERPT 108: 
-CONTEXT: "Context for Excerpt 108"
-TRANSCRIPTION: "Another transcription excerpt which is less important but has more critical transcription errors which needs clarification"
+# EXCERPT 49:
+CONTEXT: "We are finalizing the deployment schedule for next week."
+TRANSCRIPTION: "I think we should push the release to chews day."
 
-Output: 108
+# EXCERPT 108:
+CONTEXT: "The client asked for a specific budget constraint on the AWS migration."
+TRANSCRIPTION: "Yeah the maximum budget is capped at [unintelligible] thousand dollars."
 
-Explanation:
-In this case, you should choose 108, as choosing 49 will have no / minimal information gain.
-
-# IMPORTANT:
-You should only output a single number (which is the number given to the excerpt). Do not output anything else.
+Output:
+<reasoning>
+Excerpt 49 contains a minor phonetic error ("chews day" instead of "Tuesday") that is easily understood by any reader; it does not need clarification. Excerpt 108 is highly important (budget) and contains a critical error masking the exact number, which cannot be deduced from context.
+</reasoning>
+<choice>
+108
+</choice>
 """
 
 CHOOSER_USER_PROMPT = """
-# EXCERPT {idx0}
+# FIRST EXCERPT ID: {idx0}
 CONTEXT: {context0}
 TRANSCRIPTION: {transcription0}
 
-# EXCERPT {idx1}
+# SECOND EXCERPT ID: {idx1}
 CONTEXT: {context1}
+TRANSCRIPTION: {transcription1}
+
+Output:
+"""
+
+
+CHOOSER_SYS_PROMPT_NO_CTX = """
+# TASK DESCRIPTION:
+You are an expert at identifying important meeting transcriptions errors. You will be given two transcription 
+excerpts. You task is to choose which of the two transcriptions to
+'clarify.' When a transcription is 'clarified,' all the mistranscription errors, if there are any, is corrected.
+
+Because you can only choose one out of the two transcription excerpts to clarify, you should choose the one
+which is more important and has more mistranscriptions. For instance, if a transcription has a lot of errors, but
+is talking about something trivial like lunch, it may not be worth clarifying. Conversely, if a transcription is 
+important, but has almost no errors, then you wouldn't gain any additional information from the clarification. 
+
+You should choose to clarify the transcription that is most important and has the most errors of the two. 
+
+The two transcription excerpts will be provided in the following format:
+
+# FIRST EXCERPT ID: <id>
+TRANSCRIPTION: <transcription>
+
+# FIRST EXCERPT ID: <id>
+TRANSCRIPTION: <transcription>
+
+Choose which excerpt is more important and has more errors to clarify by replying with its ID. 
+
+# IMPORTANT:
+You should only output a single number corresponding to the ID. 
+Do not output any preamble, explanation, or anything else.
+ONLY reply with the ID of your chosen excerpt.
+"""
+
+CHOOSER_USER_PROMPT_NO_CTX = """
+# FIRST EXCERPT ID: {idx0}
+TRANSCRIPTION: {transcription0}
+
+# SECOND EXCERPT ID: {idx1}
 TRANSCRIPTION: {transcription1}
 
 Output:

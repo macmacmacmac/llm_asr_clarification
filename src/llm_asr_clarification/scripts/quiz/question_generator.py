@@ -52,7 +52,9 @@ def run(args_list=None):
     
     for meeting_path in tqdm(meeting_paths):
         file_todo_path = os.path.join(meeting_path, "transcripts", f"{args.question_file}.txt")
-        output_preds_path = os.path.join(meeting_path, "transcripts", f"quiz_from_{args.question_file}.json")
+
+        os.makedirs(os.path.join(meeting_path, "quiz"), exist_ok=True)
+        output_preds_path = os.path.join(meeting_path, "quiz", f"quiz_from_{args.question_file}.json")
         
         logger.info(f"Generating Questions for file: {file_todo_path}")
         
@@ -89,7 +91,7 @@ def run(args_list=None):
                 "quiz_questions": None,
                 "correct_answers": None
             }
-        ipdb.set_trace()
+        # ipdb.set_trace()
         try: 
             questions = result.get("quiz_questions", None)
             answers = result.get("correct_answers", None)
