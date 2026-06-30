@@ -12,6 +12,7 @@ import ipdb
 from llm_asr_clarification.utils.diarization_utils import (
     extract_enrollment_embedding, get_headset_to_speaker_map
 )
+from llm_asr_clarification.constants import SAMPLE_MEETINGS
 
 SAMPLING_RATE = 16_000
 
@@ -23,6 +24,7 @@ def run(args_list=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("--whisper-size", type=str, default="tiny")
     parser.add_argument("--dataset-path", type=str, default="./datasets/amicorpus")
+    parser.add_argument("--do-sample-meetings", action="store_true")
     parser.add_argument("--meeting-name", type=str, default="")
     parser.add_argument("--seed", type=int, default=47)
     
@@ -74,10 +76,17 @@ def run(args_list=None):
     # ┌───────────────────────────────────────────────┐
     # │                   LOAD DATA                   │
     # └───────────────────────────────────────────────┘
+    # Fetch a single meeting
     if args.meeting_name:
         meeting_folders=[DATASET_PATH / args.meeting_name]
+
+    # Fetch only sample meetings
+    elif args.do_sample_meetings:
+        meeting_folders = [f for f in DATASET_PATH.iterdir()
+                          if (f.is_dir() and
+                              f.name in SAMPLE_MEETINGS)]
+    # Fetch all meetings
     else:
-        # Fetch all dataset meeting folders
         meeting_folders = [f for f in DATASET_PATH.iterdir() 
                             if (f.is_dir() and 
                                 f.name not in ["ami_public_manual_1.6.2", "xinlu_data"])]
@@ -187,33 +196,8 @@ def run(args_list=None):
             # │                FORMAT & SAVE                  │
             # └───────────────────────────────────────────────┘
             diarized_lines = []
-            if speaker_separated_data:
-
-                # Use the first data as the initial point
-                last_speaker = speaker_separated_data[0]["speaker"]
-                combined_text = speaker_separated_data[0]["text"]
-                start = speaker_separated_data[0]["start"]
-                end = speaker_separated_data[0]["end"]
-
-
-                for data in speaker_separated_data[1:]:
-                    # If the speaker hasn't changed
-                    if data["speaker"] == last_speaker:
-                        # Combine the texts
-                        combined_text += " " + data["text"]
-
-                        # Merge the timestamps
-                        end = data["end"]
-                    
-                    # The speaker has changed
-                    else:
-                        diarized_lines.append(f"({start} - {end})[{last_speaker}]: {combined_text.strip()}\n")
-                        last_speaker = data["speaker"]
-                        combined_text = data["text"]
-                        start = data["start"]
-                        end = data["end"]
-
-                diarized_lines.append(f"({start} - {end})[{last_speaker}]: {combined_text.strip()}\n")
+            for data in speaker_separated_data:
+                diarized_lines.append(f"({data["start"]} - {data["end"]})[{data["speaker"]}]: {data["text"].strip()}\n")
 
             transcript_file_path = os.path.join(transcripts_folder, f"whisper_{WHISPER_SIZE}_diarized_transcript.txt")
             with open(transcript_file_path, "w", encoding="utf-8") as f:
