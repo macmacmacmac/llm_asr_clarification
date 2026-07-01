@@ -24,6 +24,7 @@ def run(args_list=None):
     parser.add_argument("--whisper-size", type=str, default="tiny")
     parser.add_argument("--dataset-path", type=str, default="./datasets/amicorpus")
     parser.add_argument("--meeting-name", type=str, default="")
+    parser.add_argument("--use-sdm-audio", action="store_true")
     parser.add_argument("--seed", type=int, default=47)
     
     args, _ = parser.parse_known_args(args_list)
@@ -96,21 +97,26 @@ def run(args_list=None):
             # Fetch all wav files
             all_wavs = list(audio_folder.rglob("*.wav"))
             
-            # Separate the Mix from the individual Headsets
-            mix_file_path = [f for f in all_wavs if "Mix-Headset" in f.name][0]
-            headset_files = [f for f in all_wavs if "Mix-Headset" not in f.name and "Headset" in f.name]
+            # Separate the Mix headset from the individual Headsets
+            mix_headset_file = [f for f in all_wavs if "Mix-Headset" in f.name][0]
+            individual_headset_files = [f for f in all_wavs if "Mix-Headset" not in f.name and "Headset" in f.name]
 
+            # Get Single Distant Microphone (SDM) files and select the first one
+            sdm_file = [f for f in all_wavs if "Array" in f.name][0]
+
+            # Determine main audio file
+            audio_to_transcribe = sdm_file if args.use_sdm_audio else mix_headset_file
 
             # ┌───────────────────────────────────────────────┐
             # │               SPEAKER ENROLLMENT              │
             # └───────────────────────────────────────────────┘
-            logger.info(f"Extracting enrollment embeddings for {len(headset_files)} speakers...")
+            logger.info(f"Extracting enrollment embeddings for {len(individual_headset_files)} speakers...")
             enrolled_profiles = {}  
 
             # Construct a map of headset to speaker name
-            headset_to_speaker_map = get_headset_to_speaker_map(headset_files)
+            headset_to_speaker_map = get_headset_to_speaker_map(individual_headset_files)
 
-            for headset_file in headset_files:
+            for headset_file in individual_headset_files:
                 # Use the filename (e.g., "ES2005a.Headset-0") as the speaker label
                 speaker_id = headset_to_speaker_map[headset_file.stem.split('.')[-1]]
 
@@ -129,7 +135,7 @@ def run(args_list=None):
             # │                 TRANSCRIPTION                 │
             # └───────────────────────────────────────────────┘
             logger.info("Running Whisper Transcription on the Mixed Audio...")
-            audio_np = whisper.load_audio(mix_file_path.as_posix())
+            audio_np = whisper.load_audio(audio_to_transcribe.as_posix())
             waveform = torch.from_numpy(audio_np).unsqueeze(0).to(DEVICE)
             
             result = model.transcribe(audio=audio_np)
