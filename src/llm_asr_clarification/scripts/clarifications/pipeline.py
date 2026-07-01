@@ -13,7 +13,6 @@ from llm_asr_clarification.constants.clarification_prompts import (
     SUMMARIZER_SYS_PROMPT, SUMMARIZER_USER_PROMPT,
     CHOOSER_SYS_PROMPT, CHOOSER_USER_PROMPT
 )
-from llm_asr_clarification.constants import SAMPLE_MEETINGS
 
 
 GROUND_TRUTH_TRANSCRIPT = "parsed_diarized_gt.txt"
@@ -181,9 +180,8 @@ def run(args_list=None):
     
     # Perform CLI Argument Parsing
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset-path", type=str, default="./datasets/amicorpus")
+    parser.add_argument("--dataset-path", type=str, default="./datasets/amicorpus/train")
     parser.add_argument("--transcript-file", type=str, default="whisper_tiny_diarized_transcript.txt")
-    parser.add_argument("--do-sample-meetings", action="store_true")
     parser.add_argument("--strategy", type=str, default="RANDOM")
     parser.add_argument("--seed", type=int, default=47)
     
@@ -226,15 +224,8 @@ def run(args_list=None):
     # ┌───────────────────────────────────────────────┐
     # │                   LOAD DATA                   │
     # └───────────────────────────────────────────────┘
-    if args.do_sample_meetings:
-        meeting_folders = [f for f in DATASET_PATH.iterdir()
-                          if (f.is_dir() and
-                              f.name in SAMPLE_MEETINGS)]
-    else:
-        # Fetch all dataset meeting folders
-        meeting_folders = [f for f in DATASET_PATH.iterdir() 
-                            if (f.is_dir() and 
-                                f.name not in ["ami_public_manual_1.6.2", "xinlu_data"])]
+    # Fetch all dataset meeting folders
+    meeting_folders = [f for f in DATASET_PATH.iterdir() if f.is_dir()]
         
         
 

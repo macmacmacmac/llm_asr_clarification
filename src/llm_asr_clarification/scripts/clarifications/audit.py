@@ -7,7 +7,6 @@ from tqdm.contrib.logging import logging_redirect_tqdm
 import ipdb
 import random
 from llm_asr_clarification.models import OpenAIWrapper
-from llm_asr_clarification.constants import SAMPLE_MEETINGS
 import json
 from typing import List
 import re
@@ -116,9 +115,8 @@ def run(args_list=None):
     
     # Perform CLI Argument Parsing
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset-path", type=str, default="./datasets/amicorpus")
+    parser.add_argument("--dataset-path", type=str, default="./datasets/amicorpus/train")
     parser.add_argument("--transcript-file", type=str, default="whisper_tiny_diarized_transcript.txt")
-    parser.add_argument("--do-sample-meetings", action="store_true")
     parser.add_argument("--meeting-name", type=str, default="")
     parser.add_argument("--seed", type=int, default=47)
     
@@ -159,16 +157,9 @@ def run(args_list=None):
     if args.meeting_name:
         meeting_folders=[DATASET_PATH / args.meeting_name]
 
-    # Fetch only sample meetings
-    elif args.do_sample_meetings:
-        meeting_folders = [f for f in DATASET_PATH.iterdir()
-                          if (f.is_dir() and
-                              f.name in SAMPLE_MEETINGS)]
     # Fetch all meetings
     else:
-        meeting_folders = [f for f in DATASET_PATH.iterdir() 
-                            if (f.is_dir() and 
-                                f.name not in ["ami_public_manual_1.6.2", "xinlu_data"])]
+        meeting_folders = [f for f in DATASET_PATH.iterdir() if f.is_dir()]
         
 
     # ┌───────────────────────────────────────────────┐

@@ -12,7 +12,6 @@ import ipdb
 from llm_asr_clarification.utils.diarization_utils import (
     extract_enrollment_embedding, get_headset_to_speaker_map
 )
-from llm_asr_clarification.constants import SAMPLE_MEETINGS
 
 SAMPLING_RATE = 16_000
 
@@ -23,7 +22,7 @@ def run(args_list=None):
     # Perform CLI Argument Parsing
     parser = argparse.ArgumentParser()
     parser.add_argument("--whisper-size", type=str, default="tiny")
-    parser.add_argument("--dataset-path", type=str, default="./datasets/amicorpus")
+    parser.add_argument("--dataset-path", type=str, default="./datasets/amicorpus/train")
     parser.add_argument("--do-sample-meetings", action="store_true")
     parser.add_argument("--meeting-name", type=str, default="")
     parser.add_argument("--seed", type=int, default=47)
@@ -80,17 +79,10 @@ def run(args_list=None):
     if args.meeting_name:
         meeting_folders=[DATASET_PATH / args.meeting_name]
 
-    # Fetch only sample meetings
-    elif args.do_sample_meetings:
-        meeting_folders = [f for f in DATASET_PATH.iterdir()
-                          if (f.is_dir() and
-                              f.name in SAMPLE_MEETINGS)]
     # Fetch all meetings
     else:
-        meeting_folders = [f for f in DATASET_PATH.iterdir() 
-                            if (f.is_dir() and 
-                                f.name not in ["ami_public_manual_1.6.2", "xinlu_data"])]
-
+        meeting_folders = [f for f in DATASET_PATH.iterdir() if f.is_dir()]     
+                           
     # Wrap logging with tqdm
     with logging_redirect_tqdm(loggers=[logger]):
 
