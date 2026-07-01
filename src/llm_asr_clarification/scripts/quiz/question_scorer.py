@@ -20,7 +20,7 @@ def run(args_list=None):
     parser.add_argument("--msg", type=str, default="example")
     parser.add_argument("--model_to_use", type=str, default="gpt-4o-mini")
     parser.add_argument("--ami_path", type=str, default="./datasets/amicorpus")
-    parser.add_argument("--transcript_file", type=str, default="qwen_transcript")
+    parser.add_argument("--transcript_file", type=str, default="whisper_tiny_diarized_transcript")
     parser.add_argument("--question_file", type=str, default="parsed_diarized_gt")
     parser.add_argument("--do_all_meetings", action="store_true")
     parser.set_defaults(do_all_meetings=False)
@@ -52,13 +52,18 @@ def run(args_list=None):
         meeting_paths = [entry.path for entry in os.scandir(args.ami_path) if entry.name in SAMPLE_MEETINGS]
 
     for meeting_path in tqdm(meeting_paths):
-        question_path = os.path.join(meeting_path, "transcripts", f"quiz_from_{args.question_file}.json")
+        question_path = os.path.join(meeting_path, "quiz", f"quiz_from_{args.question_file}.json")
 
         chatgpt = OpenAIWrapper(logger=logger)
 
-        # Read quiz
-        with open(question_path, "r", encoding="utf-8") as f:
-            quiz = f.read()
+        # In case question gen failed earlier
+        try:
+            # Read question
+            with open(question_path, "r", encoding="utf-8") as f:
+                quiz = f.read()
+        except Exception as e:
+            logger.error(f"Something failed, couldnt read question file: {e}")
+            continue 
 
         quiz = json.loads(quiz)
         num_questions = len(quiz)

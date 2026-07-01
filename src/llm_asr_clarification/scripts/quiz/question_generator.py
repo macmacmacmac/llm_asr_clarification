@@ -1,7 +1,10 @@
 import os
 import argparse
 from llm_asr_clarification import get_logger, OpenAIWrapper
-from llm_asr_clarification.constants.quiz_prompts import QUIZ_QUESTION_GENERATOR_PROMPT
+from llm_asr_clarification.constants.quiz_prompts import (
+    QUIZ_QUESTION_GENERATOR_SYS_PROMPT_2,
+    QUIZ_QUESTION_GENERATOR_USR_PROMPT
+)
 from tqdm.auto import tqdm
 import re
 import ipdb
@@ -49,19 +52,25 @@ def run(args_list=None):
     
     for meeting_path in tqdm(meeting_paths):
         file_todo_path = os.path.join(meeting_path, "transcripts", f"{args.question_file}.txt")
-        output_preds_path = os.path.join(meeting_path, "transcripts", f"quiz_from_{args.question_file}.json")
+
+        os.makedirs(os.path.join(meeting_path, "quiz"), exist_ok=True)
+        output_preds_path = os.path.join(meeting_path, "quiz", f"quiz_from_{args.question_file}.json")
         
         logger.info(f"Generating Questions for file: {file_todo_path}")
         
-        chatgpt = OpenAIWrapper(logger=logger)
+        chatgpt = OpenAIWrapper(
+            system_prompt=QUIZ_QUESTION_GENERATOR_SYS_PROMPT_2.format(
+                num_questions=args.num_questions
+            ), 
+            logger=logger
+        )
 
         # Read transcript
         with open(file_todo_path, "r", encoding="utf-8") as f:
             transcript_text = f.read()
 
-        prompt = QUIZ_QUESTION_GENERATOR_PROMPT.format(
+        prompt = QUIZ_QUESTION_GENERATOR_USR_PROMPT.format(
             transcript=transcript_text,
-            num_questions=args.num_questions
         )
 
         response_text = chatgpt.prompt_chatgpt(
@@ -82,7 +91,7 @@ def run(args_list=None):
                 "quiz_questions": None,
                 "correct_answers": None
             }
-
+        # ipdb.set_trace()
         try: 
             questions = result.get("quiz_questions", None)
             answers = result.get("correct_answers", None)
