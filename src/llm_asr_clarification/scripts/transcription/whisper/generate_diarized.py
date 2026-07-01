@@ -221,7 +221,10 @@ def run(args_list=None):
 
                 diarized_lines.append(f"({start} - {end})[{last_speaker}]: {combined_text.strip()}\n")
 
-            transcript_file_path = os.path.join(transcripts_folder, f"whisper_{WHISPER_SIZE}_diarized_transcript.txt")
+            if args.use_sdm_audio:
+                transcript_file_path = os.path.join(transcripts_folder, f"sdm_whisper_{WHISPER_SIZE}_diarized_transcript.txt")
+            else:
+                transcript_file_path = os.path.join(transcripts_folder, f"whisper_{WHISPER_SIZE}_diarized_transcript.txt")
             with open(transcript_file_path, "w", encoding="utf-8") as f:
                 f.write("".join(diarized_lines).strip())
                 
