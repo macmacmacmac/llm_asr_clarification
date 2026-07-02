@@ -53,12 +53,15 @@ Output:
 """
 
 
-MD_FILE_ITEM_TEMPLATE = """
+WHISPER_MD_FILE_ITEM_TEMPLATE = """
 ## QUESTION
 {quiz_question}
 
 ### CORRECT ANSWER
 {correct_answer}
+
+### ANSWER WITH WHISPER TRANSCRIPT
+{whisper_answer}
 
 ### CORRESPONDING LINES
 #### GROUND TRUTH
@@ -69,6 +72,25 @@ MD_FILE_ITEM_TEMPLATE = """
 #### WHISPER
 ```
 {whisper_text}
+```
+
+---
+"""
+
+
+GT_MD_FILE_ITEM_TEMPLATE = """
+## QUESTION
+{quiz_question}
+
+### CORRECT ANSWER
+{correct_answer}
+
+### ANSWER WITH GT TRANSCRIPT
+{gt_answer}
+
+### CORRESPONDING LINES
+```
+{ground_truth_text}
 ```
 
 ---
@@ -109,6 +131,18 @@ def find_relevant_lines_using_ground_truth(transcript: str, gt_lines: List[str])
 
 
 
+def expand_gt_lines(transcript: str, gt_lines: List[str]):
+    transcript_lines = transcript.split("\n")
+    expanded_gt_lines = set()
+    for gt_line in gt_lines:
+        for i, line in enumerate(transcript_lines):
+            if gt_line == line:
+                expanded_gt_lines.update(transcript_lines[max(0, i - 5): i+1])  
+
+    expanded_gt_lines = sorted(list(expanded_gt_lines))
+    return expanded_gt_lines
+
+
 # Driver Code
 def run(args_list=None):
     exp_name = os.path.basename(__file__)
@@ -118,6 +152,7 @@ def run(args_list=None):
     parser.add_argument("--dataset-path", type=str, default="./datasets/amicorpus/train")
     parser.add_argument("--transcript-file", type=str, default="whisper_tiny_diarized_transcript.txt")
     parser.add_argument("--meeting-name", type=str, default="")
+    parser.add_argument("--audit-only-gt", action="store_true")
     parser.add_argument("--seed", type=int, default=47)
     
     args, _ = parser.parse_known_args(args_list)
@@ -172,6 +207,15 @@ def run(args_list=None):
         for meeting_folder in tqdm(meeting_folders, desc="Processing Meetings"):
             logger.info(f"Processing meeting {meeting_folder.name}")
 
+            whisper_md_file_path = meeting_folder / "quiz" / "failed_quiz_by_whisper.md"
+            gt_md_file_path = meeting_folder / "quiz" / "failed_quiz_by_gt.md"
+            md_file_path = gt_md_file_path if args.audit_only_gt else whisper_md_file_path
+
+
+            # if md_file_path.exists():
+            #     logger.info("Skipping as md file already exists")
+            #     continue
+
             transcript_path = meeting_folder / "transcripts" / TRANSCRIPT_FILE
             gt_transcript_path = meeting_folder / "transcripts" / GROUND_TRUTH_TRANSCRIPT
             quiz_path = meeting_folder / "quiz" / QUIZ_FILE
@@ -188,17 +232,22 @@ def run(args_list=None):
 
             # Identify questions where generated transcripts failed
             failed_by_whisper = [q for q in quiz 
-                                 if q[f"score_using_{TRANSCRIPT_FILE.split(".")[0]}"] != 1]
+                                 if (q[f"score_using_{TRANSCRIPT_FILE.split(".")[0]}"] != 1) and
+                                 (q[f"score_using_{GROUND_TRUTH_TRANSCRIPT.split(".")[0]}"] == 1)]
             failed_by_gt = [q for q in quiz 
                             if q[f"score_using_{GROUND_TRUTH_TRANSCRIPT.split(".")[0]}"] != 1]
             
-            md_file_content = """# FAILED QUIZ BY WHISPER
-            """
+            
+            failed_questions = failed_by_gt if args.audit_only_gt else failed_by_whisper
+            md_file_content = "# FAILED QUIZ BY GROUND TRUTH\n" if args.audit_only_gt else "# FAILED QUIZ BY WHISPER\n"
             
             # Using an LLM, find the timestamp window in the GT transcript, related to the correct answer
-            for failed_question in failed_by_whisper:
+            for failed_question in failed_questions:
                 question = failed_question["question"]
                 correct_answer = failed_question["correct_answer"]
+                whisper_answer = failed_question["answer_using_whisper_tiny_diarized_transcript"]
+                gt_answer = failed_question["answer_using_parsed_diarized_gt"]
+
 
                 # Prepare user prompt
                 user_prompt = TIMEWINDOW_FINDER_USER_PROMPT_TEMPLATE.format(
@@ -211,7 +260,7 @@ def run(args_list=None):
                 response = TIMEWINDOW_FINDER_LLM.prompt_chatgpt(
                     model = "gpt-5.4-mini",
                     prompt = user_prompt,
-                    max_completion_tokens=1024
+                    max_completion_tokens=2048
                 )
                 
                 # Parse response as JSON
@@ -221,19 +270,33 @@ def run(args_list=None):
                     logger.info(f"Error while parsing {response} as JSON!")
                     continue
 
-                # Find corresponding lines from Whisper transcript
-                relevant_whisper_lines = find_relevant_lines_using_ground_truth(whisper_transcript, relevant_gt_lines)
+                # Get preceding context for each relevant gt line
+                expanded_gt_lines = expand_gt_lines(gt_transcript, relevant_gt_lines)
 
-                # Append to md_file_content
-                failed_question_analysis_md = MD_FILE_ITEM_TEMPLATE.format(
-                    quiz_question = question,
-                    correct_answer = correct_answer,
-                    ground_truth_text = "\n".join(relevant_gt_lines),
-                    whisper_text = "\n".join(relevant_whisper_lines)
-                )
-                md_file_content += failed_question_analysis_md
+
+                if args.audit_only_gt:
+                    # Append to md_file_content
+                    failed_question_analysis_md = GT_MD_FILE_ITEM_TEMPLATE.format(
+                        quiz_question = question,
+                        correct_answer = correct_answer,
+                        gt_answer = gt_answer,
+                        ground_truth_text = "\n".join(expanded_gt_lines),
+                    )
+                    md_file_content += failed_question_analysis_md
+                else:
+                    # Find corresponding lines from Whisper transcript
+                    relevant_whisper_lines = find_relevant_lines_using_ground_truth(whisper_transcript, expanded_gt_lines)
+
+                    # Append to md_file_content
+                    failed_question_analysis_md = WHISPER_MD_FILE_ITEM_TEMPLATE.format(
+                        quiz_question = question,
+                        correct_answer = correct_answer,
+                        whisper_answer = whisper_answer,
+                        ground_truth_text = "\n".join(expanded_gt_lines),
+                        whisper_text = "\n".join(relevant_whisper_lines)
+                    )
+                    md_file_content += failed_question_analysis_md
 
             # Save the MD file
-            md_file_path = meeting_folder / "quiz" / "failed_quiz_by_whisper.md"
             with open(md_file_path, "w") as f:
                 f.write(md_file_content)
