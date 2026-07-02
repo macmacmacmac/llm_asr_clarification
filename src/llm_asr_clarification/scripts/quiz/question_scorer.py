@@ -9,7 +9,6 @@ import ast
 import ipdb
 import json
 from filelock import FileLock
-from llm_asr_clarification.constants import SAMPLE_MEETINGS
 
 # Driver Code
 def run(args_list=None):
@@ -19,11 +18,11 @@ def run(args_list=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("--msg", type=str, default="example")
     parser.add_argument("--model_to_use", type=str, default="gpt-4o-mini")
-    parser.add_argument("--ami_path", type=str, default="./datasets/amicorpus")
-    parser.add_argument("--transcript_file", type=str, default="qwen_transcript")
+    parser.add_argument("--ami_path", type=str, default="./datasets/amicorpus/train")
+    parser.add_argument("--transcript_file", type=str, default="whisper_tiny_diarized_transcript")
     parser.add_argument("--question_file", type=str, default="parsed_diarized_gt")
     parser.add_argument("--do_all_meetings", action="store_true")
-    parser.set_defaults(do_all_meetings=False)
+    parser.add_argument("--meeting_name", type=str, default="ES2005d")
     parser.add_argument("--chunk_size", type=int, default=10)
 
     args, _ = parser.parse_known_args(args_list)
@@ -45,20 +44,25 @@ def run(args_list=None):
 
     #==============================================================================================
 
-    # directories of meetings
+    # determine directories of meetings
     if args.do_all_meetings:
-        meeting_paths = [entry.path for entry in os.scandir(args.ami_path) if entry.name not in ['ami_public_manual_1.6.2', 'xinlu_data']]
+        meeting_paths = [entry.path for entry in os.scandir(args.ami_path)]
     else:
-        meeting_paths = [entry.path for entry in os.scandir(args.ami_path) if entry.name in SAMPLE_MEETINGS]
+        meeting_paths = [f"{args.ami_path}/{args.meeting_name}"] 
 
     for meeting_path in tqdm(meeting_paths):
-        question_path = os.path.join(meeting_path, "transcripts", f"quiz_from_{args.question_file}.json")
+        question_path = os.path.join(meeting_path, "quiz", f"quiz_from_{args.question_file}.json")
 
         chatgpt = OpenAIWrapper(logger=logger)
 
-        # Read quiz
-        with open(question_path, "r", encoding="utf-8") as f:
-            quiz = f.read()
+        # In case question gen failed earlier
+        try:
+            # Read question
+            with open(question_path, "r", encoding="utf-8") as f:
+                quiz = f.read()
+        except Exception as e:
+            logger.error(f"Something failed, couldnt read question file: {e}")
+            continue 
 
         quiz = json.loads(quiz)
         num_questions = len(quiz)

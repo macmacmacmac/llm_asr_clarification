@@ -1,12 +1,14 @@
 import os
 import argparse
 from llm_asr_clarification import get_logger, OpenAIWrapper
-from llm_asr_clarification.constants.quiz_prompts import QUIZ_QUESTION_GENERATOR_PROMPT
+from llm_asr_clarification.constants.quiz_prompts import (
+    QUIZ_QUESTION_GENERATOR_SYS_PROMPT_2,
+    QUIZ_QUESTION_GENERATOR_USR_PROMPT
+)
 from tqdm.auto import tqdm
 import re
 import ipdb
 import json
-from llm_asr_clarification.constants import SAMPLE_MEETINGS
 
 
 # Driver Code
@@ -16,10 +18,10 @@ def run(args_list=None):
     # Perform CLI Argument Parsing=================================================
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_to_use", type=str, default="gpt-4o-mini")
-    parser.add_argument("--ami_path", type=str, default="./datasets/amicorpus")
+    parser.add_argument("--ami_path", type=str, default="./datasets/amicorpus/train")
     parser.add_argument("--question_file", type=str, default="parsed_diarized_gt")
     parser.add_argument("--do_all_meetings", action="store_true")
-    parser.set_defaults(do_all_meetings=False)
+    parser.add_argument("--meeting_name", type=str, default="ES2005d")
     parser.add_argument("--num_questions", type=int, default=10)
 
     args, _ = parser.parse_known_args(args_list)
@@ -41,27 +43,33 @@ def run(args_list=None):
 
     #==============================================================================================
 
-    # directories of meetings
+    # determine directories of meetings
     if args.do_all_meetings:
-        meeting_paths = [entry.path for entry in os.scandir(args.ami_path) if entry.name not in ['ami_public_manual_1.6.2', 'xinlu_data']]
+        meeting_paths = [entry.path for entry in os.scandir(args.ami_path)]
     else:
-        meeting_paths = [entry.path for entry in os.scandir(args.ami_path) if entry.name in SAMPLE_MEETINGS]
-    
+        meeting_paths = [f"{args.ami_path}/{args.meeting_name}"] 
+
     for meeting_path in tqdm(meeting_paths):
         file_todo_path = os.path.join(meeting_path, "transcripts", f"{args.question_file}.txt")
-        output_preds_path = os.path.join(meeting_path, "transcripts", f"quiz_from_{args.question_file}.json")
+
+        os.makedirs(os.path.join(meeting_path, "quiz"), exist_ok=True)
+        output_preds_path = os.path.join(meeting_path, "quiz", f"quiz_from_{args.question_file}.json")
         
         logger.info(f"Generating Questions for file: {file_todo_path}")
         
-        chatgpt = OpenAIWrapper(logger=logger)
+        chatgpt = OpenAIWrapper(
+            system_prompt=QUIZ_QUESTION_GENERATOR_SYS_PROMPT_2.format(
+                num_questions=args.num_questions
+            ), 
+            logger=logger
+        )
 
         # Read transcript
         with open(file_todo_path, "r", encoding="utf-8") as f:
             transcript_text = f.read()
 
-        prompt = QUIZ_QUESTION_GENERATOR_PROMPT.format(
+        prompt = QUIZ_QUESTION_GENERATOR_USR_PROMPT.format(
             transcript=transcript_text,
-            num_questions=args.num_questions
         )
 
         response_text = chatgpt.prompt_chatgpt(
@@ -82,7 +90,7 @@ def run(args_list=None):
                 "quiz_questions": None,
                 "correct_answers": None
             }
-
+        # ipdb.set_trace()
         try: 
             questions = result.get("quiz_questions", None)
             answers = result.get("correct_answers", None)
