@@ -34,35 +34,32 @@ def get_llm_log_probs(texts: list[str]) -> list[float]:
     Computes the average log probability of a sequence of text 
     under the causal LLM for a batch of texts.
     """
-    if not texts:
-        return []
 
     # Tokenize the generated texts for the LLM
     llm_inputs = llm_tokenizer(texts, return_tensors="pt", padding=True).to(DEVICE)
     
     with torch.no_grad():
         llm_outputs = llm_model(**llm_inputs)
-        logits = llm_outputs.logits
+        logits = llm_outputs.logits     # (batch_size, seq_len, vocab_size)
         
     # Causal LM predicts the next token. Shift logits and labels to align them.
-    shift_logits = logits[..., :-1, :].contiguous()
-    shift_labels = llm_inputs.input_ids[..., 1:].contiguous()
+    shift_logits = logits[..., :-1, :].contiguous()             # (batch_size, seq_len, vocab_size)
+    shift_labels = llm_inputs.input_ids[..., 1:].contiguous()   # (batch_size, seq_len)
         
     # CrossEntropyLoss computes -log(prob)
-    # loss shape will be (batch_size * seq_len,)
-    loss = LOSS_FN(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
-    
-    # reshape to (batch_size, seq_len)
-    loss = loss.view(shift_labels.size(0), shift_labels.size(1))
+    # maximizing log prob is minimizing cross entropy loss
+    loss = LOSS_FN(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))     # (batch_size * seq_len, )
+    loss = loss.view(shift_labels.size(0), shift_labels.size(1))                            # (batch_size, seq_len)
     
     # Mask out padding tokens
-    attention_mask = llm_inputs.attention_mask[..., 1:].contiguous()
+    attention_mask = llm_inputs.attention_mask[..., 1:].contiguous()                        # (batch_size, seq_len)
     
     # Average loss per sequence (only over valid tokens)
     sum_loss = (loss * attention_mask).sum(dim=1)
     valid_tokens = attention_mask.sum(dim=1).clamp(min=1)
-    
     llm_scores = -(sum_loss / valid_tokens)
+
+
     return llm_scores.tolist()
     
 
@@ -71,7 +68,7 @@ def perform_transcription(
         model,
         processor,
         audio_chunk,
-        num_beams = 3,
+        num_beams,
         print_beam_results = False
 ):
     # Preprocess the audio into spectrogram features
@@ -91,7 +88,7 @@ def perform_transcription(
             **inputs,
             num_beams=num_beams,
             num_return_sequences=num_beams,
-            temperature = 0.1,
+            temperature = 0.5,
             do_sample = True,
             return_dict_in_generate=True,
             output_scores=True
@@ -160,6 +157,7 @@ def run(args_list=None):
     parser.add_argument("--asr-model-name", type=str, default="openai/whisper-tiny")
     parser.add_argument("--dataset-path", type=str, default="./datasets/amicorpus/train")
     parser.add_argument("--llm-model-name", type=str, default="meta-llama/Llama-3.1-8B-Instruct")
+    parser.add_argument("--num-beams", type=int, default=5)
     parser.add_argument("--meeting-name", type=str, default="")
 
     args, _ = parser.parse_known_args(args_list)
@@ -168,6 +166,7 @@ def run(args_list=None):
     ASR_MODEL_NAME = args.asr_model_name
     LLM_MODEL_NAME = args.llm_model_name
     DATASET_PATH = Path(args.dataset_path)
+    NUM_BEAMS = args.num_beams
 
     # Other Global Variables
     global DEVICE
@@ -255,6 +254,7 @@ def run(args_list=None):
 
         # Prcoess all Meeting Folders
         for meeting_folder in tqdm(meeting_folders):
+            LOGGER.info(f"Processing meeting: {meeting_folder.name}")
 
             # Prep audio and transcript folders
             audio_folder = meeting_folder / "audio"
@@ -328,7 +328,7 @@ def run(args_list=None):
                     processor = processor, 
                     audio_chunk = chunk, 
                     # print_beam_results=True,
-                    num_beams=3
+                    num_beams=NUM_BEAMS
                 )
 
                 # DIARIZATION
