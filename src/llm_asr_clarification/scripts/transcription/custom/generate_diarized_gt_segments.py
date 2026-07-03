@@ -8,7 +8,10 @@ from tqdm.contrib.logging import logging_redirect_tqdm
 import soundfile as sf
 import ipdb
 import transformers
-from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq
+from transformers import (
+    AutoProcessor, AutoModelForSpeechSeq2Seq,
+    AutoTokenizer, AutoModelForCausalLM
+)
 from speechbrain.inference.speaker import EncoderClassifier
 import torch.nn.functional as F
 from llm_asr_clarification.utils.diarization_utils import (
@@ -23,6 +26,45 @@ transformers.logging.set_verbosity_error()
 
 # Global Variables
 SAMPLING_RATE = 16_000
+LOSS_FN = torch.nn.CrossEntropyLoss(reduction='none')
+
+
+def get_llm_log_probs(texts: list[str]) -> list[float]:
+    """
+    Computes the average log probability of a sequence of text 
+    under the causal LLM for a batch of texts.
+    """
+    if not texts:
+        return []
+
+    # Tokenize the generated texts for the LLM
+    llm_inputs = llm_tokenizer(texts, return_tensors="pt", padding=True).to(DEVICE)
+    
+    with torch.no_grad():
+        llm_outputs = llm_model(**llm_inputs)
+        logits = llm_outputs.logits
+        
+    # Causal LM predicts the next token. Shift logits and labels to align them.
+    shift_logits = logits[..., :-1, :].contiguous()
+    shift_labels = llm_inputs.input_ids[..., 1:].contiguous()
+        
+    # CrossEntropyLoss computes -log(prob)
+    # loss shape will be (batch_size * seq_len,)
+    loss = LOSS_FN(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
+    
+    # reshape to (batch_size, seq_len)
+    loss = loss.view(shift_labels.size(0), shift_labels.size(1))
+    
+    # Mask out padding tokens
+    attention_mask = llm_inputs.attention_mask[..., 1:].contiguous()
+    
+    # Average loss per sequence (only over valid tokens)
+    sum_loss = (loss * attention_mask).sum(dim=1)
+    valid_tokens = attention_mask.sum(dim=1).clamp(min=1)
+    
+    llm_scores = -(sum_loss / valid_tokens)
+    return llm_scores.tolist()
+    
 
 
 def perform_transcription(
@@ -69,17 +111,18 @@ def perform_transcription(
         torch.tensor(-100.0, device=transition_scores.device),
         transition_scores
     )
-    scores = transition_scores.mean(dim=1).tolist()
+    asr_scores = transition_scores.mean(dim=1).tolist()
 
-    # TODO: Compute LLM Log Probs
+    # Compute LLM Log Probs
+    llm_scores = get_llm_log_probs(decoded_results)
     
     # Format the results
     beam_results = {}
-    for i, (text, score) in enumerate(zip(decoded_results, scores)):
-        beam_results[f'beam_{i+1}'] = {'text': text, 'asr_avg_log_prob': score}
+    for i, (text, asr_score, llm_score) in enumerate(zip(decoded_results, asr_scores, llm_scores)):
+        beam_results[f'beam_{i+1}'] = {'text': text, 'asr_avg_log_prob': asr_score, 'llm_avg_log_prob': llm_score}
 
         if print_beam_results:
-            LOGGER.info(f"Beam {i + 1}: '{text}' (log prob: {score:.4f})")
+            LOGGER.info(f"Beam {i + 1}: '{text}' (ASR avg log prob: {asr_score:.4f}, LLM avg log prob: {llm_score:.4f})")
 
     return beam_results
 
@@ -114,17 +157,17 @@ def run(args_list=None):
     
     # Perform CLI Argument Parsing
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model-name", type=str, default="openai/whisper-tiny")
+    parser.add_argument("--asr-model-name", type=str, default="openai/whisper-tiny")
     parser.add_argument("--dataset-path", type=str, default="./datasets/amicorpus/train")
-    parser.add_argument("--whisper-size", type=str, default="tiny")
+    parser.add_argument("--llm-model-name", type=str, default="meta-llama/Llama-3.1-8B-Instruct")
     parser.add_argument("--meeting-name", type=str, default="")
 
     args, _ = parser.parse_known_args(args_list)
 
     # Parse CLI arguments to global variables
-    MODEL_NAME = args.model_name
+    ASR_MODEL_NAME = args.asr_model_name
+    LLM_MODEL_NAME = args.llm_model_name
     DATASET_PATH = Path(args.dataset_path)
-    WHISPER_SIZE = args.whisper_size
 
     # Other Global Variables
     global DEVICE
@@ -160,14 +203,14 @@ def run(args_list=None):
     # ┌───────────────────────────────────────────────┐
     # │                 LOAD MODELS                   │
     # └───────────────────────────────────────────────┘
-    LOGGER.info(f"Loading HF Model: {MODEL_NAME}...")
+    LOGGER.info(f"Loading HF Model: {ASR_MODEL_NAME}...")
 
     # AutoProcessor handles text tokenization AND audio feature extraction
-    processor = AutoProcessor.from_pretrained(MODEL_NAME)
+    processor = AutoProcessor.from_pretrained(ASR_MODEL_NAME)
 
     # AutoModelForSpeechSeq2Seq handles the actual encoder-decoder network
     model = AutoModelForSpeechSeq2Seq.from_pretrained(
-        MODEL_NAME,
+        ASR_MODEL_NAME,
         device_map=DEVICE,
         torch_dtype=torch.bfloat16,
         low_cpu_mem_usage=True
@@ -192,6 +235,20 @@ def run(args_list=None):
         source="speechbrain/spkrec-ecapa-voxceleb",
         run_opts={"device": DEVICE}
     )
+
+    # Load LLM (Model + Tokenizer) for LLM Log Prob calculation
+    global llm_tokenizer
+    llm_tokenizer = AutoTokenizer.from_pretrained(LLM_MODEL_NAME)
+    if llm_tokenizer.pad_token is None:
+        llm_tokenizer.pad_token = llm_tokenizer.eos_token
+    
+    global llm_model
+    llm_model = AutoModelForCausalLM.from_pretrained(
+        LLM_MODEL_NAME,
+        dtype=torch.bfloat16,
+        device_map=DEVICE
+    )
+    llm_model.eval()
 
     # Wrap logging with tqdm
     with logging_redirect_tqdm(loggers=[LOGGER]):
