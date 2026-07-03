@@ -11,7 +11,9 @@ import transformers
 from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq
 from speechbrain.inference.speaker import EncoderClassifier
 import torch.nn.functional as F
-from llm_asr_clarification.utils.diarization_utils import extract_enrollment_embedding
+from llm_asr_clarification.utils.diarization_utils import (
+    extract_enrollment_embedding, get_headset_to_speaker_map
+)
 import whisper
 
 # Completely mute all warnings
@@ -19,14 +21,6 @@ transformers.logging.set_verbosity_error()
 
 # Global Variables
 SAMPLING_RATE = 16_000
-
-
-headset_to_speaker_map = {
-    "Headset-0": "Speaker A",
-    "Headset-1": "Speaker B",
-    "Headset-2": "Speaker C",
-    "Headset-3": "Speaker D"
-}
 
 
 def perform_transcription(
@@ -53,7 +47,7 @@ def perform_transcription(
             **inputs,
             num_beams=num_beams,
             num_return_sequences=num_beams,
-            temperature = 0.5,
+            temperature = 0.1,
             do_sample = True
         )
 
@@ -83,7 +77,7 @@ def run(args_list=None):
     # Perform CLI Argument Parsing
     parser = argparse.ArgumentParser()
     parser.add_argument("--model-name", type=str, default="openai/whisper-tiny")
-    parser.add_argument("--dataset-path", type=str, default="./datasets/amicorpus")
+    parser.add_argument("--dataset-path", type=str, default="./datasets/amicorpus/train")
     parser.add_argument("--whisper-size", type=str, default="tiny")
     parser.add_argument("--meeting-name", type=str, default="")
 
@@ -122,9 +116,7 @@ def run(args_list=None):
         meeting_folders=[DATASET_PATH / args.meeting_name]
     else:
         # Fetch all dataset meeting folders
-        meeting_folders = [f for f in DATASET_PATH.iterdir() 
-                            if (f.is_dir() and 
-                                f.name not in ["ami_public_manual_1.6.2", "xinlu_data"])]
+        meeting_folders = [f for f in DATASET_PATH.iterdir() if f.is_dir() ]
     
 
     # ┌───────────────────────────────────────────────┐
@@ -189,6 +181,9 @@ def run(args_list=None):
             # └───────────────────────────────────────────────┘
             LOGGER.info(f"Extracting enrollment embeddings for {len(headset_files)} speakers...")
             enrolled_profiles = {}
+
+            # Construct a map of headset to speaker name
+            headset_to_speaker_map = get_headset_to_speaker_map(headset_files)
             
             for headset_file in headset_files:
                 # Use the filename (e.g., "ES2005a.Headset-0") as the speaker label
