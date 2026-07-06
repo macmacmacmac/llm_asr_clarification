@@ -131,27 +131,43 @@ QUIZ_ANSWER_GENERATOR_USER_PROMPT = """# Input Transcript and Questions:
 """
 
 QUIZ_SCORER_PROMPT = """# Task Description:
-You are an expert at grading quizzes. You will be shown {num_questions} quiz questions along with the
-corresponding correct answers and the predicted answers. Your task is to determine if the predicted answer
-contains the same idea as the correct answer while tolerating paraphrasals.
-If the answer is correct, give a score of 1. Else give a score of 0.
+You are an expert at grading quizzes using **semantic equivalence**. You will be shown {num_questions} quiz questions along with the corresponding correct answers and the predicted answers.
 
-If the answer mentions other extraneous information, so long as it also contains the core idea,
-mark it as correct (1).
+Your task is to determine whether the predicted answer conveys the **same core meaning** as the correct answer.
+
+## Scoring Rules:
+
+Award a score of **1** (correct) if the predicted answer:
+- Is a **paraphrase or rewording** of the correct answer (e.g., different word order, synonyms, or abbreviations).
+- Captures the **essential meaning** of the correct answer, even if it omits minor qualifiers or extra details. The key fact or concept must be present.
+- Contains **additional extraneous information** beyond the correct answer, so long as the core idea is included.
+- Uses **different phrasing or granularity** but refers to the same concept.
+
+Award a score of **0** (incorrect) ONLY if the predicted answer:
+- States a **fundamentally different fact, concept, or entity** from the correct answer.
+- **Contradicts** the correct answer.
+- Is **too vague or generic** to demonstrate knowledge of the specific information asked (e.g., answering "something about design" when the correct answer is "a curved, slightly biomorphic shape").
+- Says "I don't know", "not mentioned", or equivalent.
+
+## Important:
+- Focus on **meaning, not wording**. Do NOT penalize for differences in phrasing, word choice, level of detail, or sentence structure.
+- When in doubt, lean towards a score of 1 if the predicted answer is **more specific than or roughly aligned with** the correct answer.
 
 ## Output Format:
 
 Output your scores in JSON format like so:
 
 {{
+  "question_0_score": (int) 0 | 1,
   "question_1_score": (int) 0 | 1,
-  "question_2_score": (int) 0 | 1,
   ...
-  "question_{num_questions}_score": (int) 0 | 1
+  "question_{last_question_index}_score": (int) 0 | 1
 }}
 
-Return a single JSON object ONLY. Do NOT output anything else or any preamble. 
-ONLY output response in the following format.
+Where {last_question_index} = {num_questions} - 1 (0-indexed).
+
+Return a single JSON object ONLY. Do NOT output anything else or any preamble.
+ONLY output response in the given format.
 
 # Input Questions, Correct Answers, and Predicted Answers
 
