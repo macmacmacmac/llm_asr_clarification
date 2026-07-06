@@ -408,3 +408,11 @@ def run(args_list=None):
             LOGGER.info(f"Saved beam results for {beam_results_path}\n\n")  
 
 
+# FOR FIXING WORDS GETTING CUT OFF AT THE END OF TRANSCRIPTION
+# TODO: Keep Float Timestamps from the GT to fix the truncation of ending bits of each transcription line
+# TODO: Add Guards against empty chunks (GT lines with (51 - 51): Mm-hmm)
+# TODO: Add Modest Padding (0.2-0.3 seconds on each side)
+
+# EXTRA CHANGES
+# TODO: Try with dropping do_sample
+
