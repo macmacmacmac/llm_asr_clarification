@@ -256,6 +256,11 @@ def run(args_list=None):
         for meeting_folder in tqdm(meeting_folders):
             LOGGER.info(f"Processing meeting: {meeting_folder.name}")
 
+            # [OPTIONAL] Skip if beam results already exist for this meeting
+            # if (meeting_folder / "artifacts" / "beam_results.json").exists():
+            #     LOGGER.info("Skipping as beam results already exists!")
+            #     continue
+
             # Prep audio and transcript folders
             audio_folder = meeting_folder / "audio"
             transcripts_folder = meeting_folder / "transcripts"
