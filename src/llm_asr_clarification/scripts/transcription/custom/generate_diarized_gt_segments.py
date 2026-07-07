@@ -63,53 +63,12 @@ def get_llm_log_probs(texts: list[str]) -> list[float]:
     return llm_scores.tolist()
 
 
-def get_asr_log_probs(model, processor, input_features, sequences) -> list[float]:
-    """
-    Computes the average log probability of each generated hypothesis
-    under the ASR model via a teacher-forced forward pass.
-
-    Unlike transition scores from generate(), these are exact model
-    probabilities, unaffected by the logits processors used during
-    candidate generation (temperature scaling, diversity penalty, etc.).
-    """
-    # One copy of the audio features per hypothesis
-    input_features = input_features.expand(sequences.shape[0], -1, -1)
-
-    # Shift: decoder sees tokens [0..n-1] and predicts tokens [1..n]
-    decoder_input_ids = sequences[:, :-1]
-    labels = sequences[:, 1:]
-
-    with torch.no_grad():
-        logits = model(
-            input_features=input_features,
-            decoder_input_ids=decoder_input_ids
-        ).logits                                                                # (num_hyps, seq_len, vocab_size)
-
-    # Log prob of each actual label token
-    log_probs = F.log_softmax(logits.float(), dim=-1)
-    token_log_probs = log_probs.gather(2, labels.unsqueeze(-1)).squeeze(-1)     # (num_hyps, seq_len)
-
-    # Mask out special tokens — the decoder prompt
-    # (<|startoftranscript|><|en|><|transcribe|><|notimestamps|>), EOS, and
-    # right-padding — so only real text tokens count towards the average
-    special_ids = torch.tensor(processor.tokenizer.all_special_ids, device=sequences.device)
-    valid_mask = ~torch.isin(labels, special_ids)
-
-    # Average log prob per hypothesis (only over valid tokens)
-    sum_log_probs = (token_log_probs * valid_mask).sum(dim=1)
-    valid_tokens = valid_mask.sum(dim=1).clamp(min=1)
-    asr_scores = sum_log_probs / valid_tokens
-
-    return asr_scores.tolist()
-
-
 
 def perform_transcription(
         model,
         processor,
         audio_chunk,
         num_beams,
-        diversity_penalty = 1.0,
         print_beam_results = False
 ):
     # Preprocess the audio into spectrogram features
@@ -129,26 +88,25 @@ def perform_transcription(
         # temperature > 0 as do_sample=True and silently forces num_beams=1,
         # so this was pure sampling, not beam search
         # (see transformers/models/whisper/generation_whisper.py, generate_with_fallback)
-        # outputs = model.generate(
-        #     **inputs,
-        #     num_beams=num_beams,
-        #     num_return_sequences=num_beams,
-        #     temperature = 0.5,
-        #     do_sample = True,
-        #     return_dict_in_generate=True,
-        #     output_scores=True
-        # )
-
-        # Diverse Beam Search: deterministic; the Hamming diversity penalty
-        # forces each beam group to differ from the previous groups
         outputs = model.generate(
             **inputs,
             num_beams=num_beams,
-            num_beam_groups=num_beams,
-            diversity_penalty=diversity_penalty,
             num_return_sequences=num_beams,
+            temperature = 0.5,
             return_dict_in_generate=True,
+            output_scores=True
         )
+
+        # # Diverse Beam Search: deterministic; the Hamming diversity penalty
+        # # forces each beam group to differ from the previous groups
+        # outputs = model.generate(
+        #     **inputs,
+        #     num_beams=num_beams,
+        #     num_beam_groups=num_beams,
+        #     diversity_penalty=diversity_penalty,
+        #     num_return_sequences=num_beams,
+        #     return_dict_in_generate=True,
+        # )
 
     # Decode Token IDs back to text strings
     decoded_results = processor.batch_decode(outputs.sequences, skip_special_tokens=True)
@@ -158,20 +116,20 @@ def perform_transcription(
     # under the *processed* logits (temperature / diversity penalty applied),
     # not the true model distribution. Replaced by the teacher-forced pass below.
     # (Requires output_scores=True in the generate() call above)
-    # transition_scores = model.compute_transition_scores(
-    #     outputs.sequences, outputs.scores, normalize_logits=True
-    # )
-    #
-    # # Handle potential -inf values gracefully to prevent NaN when calculating mean
-    # transition_scores = torch.where(
-    #     torch.isinf(transition_scores),
-    #     torch.tensor(-100.0, device=transition_scores.device),
-    #     transition_scores
-    # )
-    # asr_scores = transition_scores.mean(dim=1).tolist()
+    transition_scores = model.compute_transition_scores(
+        outputs.sequences, outputs.scores, normalize_logits=True
+    )
+    
+    # Handle potential -inf values gracefully to prevent NaN when calculating mean
+    transition_scores = torch.where(
+        torch.isinf(transition_scores),
+        torch.tensor(-100.0, device=transition_scores.device),
+        transition_scores
+    )
+    asr_scores = transition_scores.mean(dim=1).tolist()
 
     # Compute exact ASR log probs with a teacher-forced forward pass
-    asr_scores = get_asr_log_probs(model, processor, inputs["input_features"], outputs.sequences)
+    # asr_scores = get_asr_log_probs(model, processor, inputs["input_features"], outputs.sequences)
 
     # Compute LLM Log Probs
     llm_scores = get_llm_log_probs(decoded_results)
@@ -221,7 +179,6 @@ def run(args_list=None):
     parser.add_argument("--dataset-path", type=str, default="./datasets/amicorpus/train")
     parser.add_argument("--llm-model-name", type=str, default="meta-llama/Llama-3.1-8B-Instruct")
     parser.add_argument("--num-beams", type=int, default=5)
-    parser.add_argument("--diversity-penalty", type=float, default=1.0)
     parser.add_argument("--meeting-name", type=str, default="")
 
     args, _ = parser.parse_known_args(args_list)
@@ -231,7 +188,6 @@ def run(args_list=None):
     LLM_MODEL_NAME = args.llm_model_name
     DATASET_PATH = Path(args.dataset_path)
     NUM_BEAMS = args.num_beams
-    DIVERSITY_PENALTY = args.diversity_penalty
 
     # Other Global Variables
     global DEVICE
@@ -318,7 +274,7 @@ def run(args_list=None):
     with logging_redirect_tqdm(loggers=[LOGGER]):
 
         # Prcoess all Meeting Folders
-        for meeting_folder in tqdm(meeting_folders):
+        for meeting_folder in tqdm(meeting_folders, position=0, leave=True, desc="Meetings"):
             LOGGER.info(f"Processing meeting: {meeting_folder.name}")
 
             # [OPTIONAL] Skip if beam results already exist for this meeting
@@ -380,7 +336,7 @@ def run(args_list=None):
             speaker_separated_data = []
             last_valid_speaker = "UNKNOWN" # Keep track of the last successfully identified speaker
             
-            for segment in tqdm(gt_segments, desc="Transcribing"):
+            for segment in tqdm(gt_segments, desc="Transcribing", position=1, leave=False, mininterval=1.0):
 
                 # Extract Start and End Frame
                 start_frame = int(segment["start"] * SAMPLING_RATE)
@@ -398,8 +354,7 @@ def run(args_list=None):
                     processor = processor,
                     audio_chunk = chunk,
                     # print_beam_results=True,
-                    num_beams=NUM_BEAMS,
-                    diversity_penalty=DIVERSITY_PENALTY
+                    num_beams=NUM_BEAMS
                 )
 
                 # DIARIZATION
@@ -467,7 +422,7 @@ def run(args_list=None):
 
             artifacts_folder = meeting_folder / "artifacts"
             os.makedirs(artifacts_folder, exist_ok = True)
-            beam_results_path = artifacts_folder / "beam_results.json"
+            beam_results_path = artifacts_folder / "beam_results_2.json"
             with open(beam_results_path, "w") as f:
                 json.dump(json_results, f, indent=4)
 
