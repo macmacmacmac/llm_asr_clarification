@@ -1,7 +1,6 @@
 import os
 import argparse
 from llm_asr_clarification import get_logger, OpenAIWrapper
-from llm_asr_clarification.constants.quiz_prompts import QUIZ_SCORER_PROMPT
 import xml.etree.ElementTree as ET
 from tqdm.auto import tqdm
 import re
@@ -9,6 +8,30 @@ import ast
 import ipdb
 import json
 from filelock import FileLock
+
+
+QUIZ_SCORER_SYSTEM_PROMPT = """You are an expert quiz grader. 
+Your task is to score a single predicted answer against a correct answer by evaluating if it conveys the same core meaning, ignoring exact wording.
+
+Scoring Rules:
+- Award 1 (Correct): The predicted answer paraphrases, captures the essential meaning, or contains the core idea (even with extraneous info or different granularity). Focus on meaning; when in doubt, lean towards 1.
+- Award 0 (Incorrect): The predicted answer states a fundamentally different fact, contradicts the correct answer, is too vague, or says "I don't know".
+
+Output Format:
+Return ONLY a single JSON object. Do not include any preamble or extra text. Use the exact format below:
+{
+  "score": 0 | 1
+}"""
+
+
+QUIZ_SCORER_USER_PROMPT_TEMPLATE = """Question: {question}
+Correct Answer: {correct_answer}
+Predicted Answer: {predicted_answer}
+
+Output JSON Score:
+"""
+
+
 
 # Driver Code
 def run(args_list=None):
@@ -42,6 +65,9 @@ def run(args_list=None):
         f"Received the following arguments:\n{received_args_log}"
     )
 
+    # Global Variables
+    chatgpt = OpenAIWrapper(logger=logger, system_prompt=QUIZ_SCORER_SYSTEM_PROMPT)
+
     #==============================================================================================
 
     # determine directories of meetings
@@ -50,70 +76,120 @@ def run(args_list=None):
     else:
         meeting_paths = [f"{args.ami_path}/{args.meeting_name}"] 
 
+    # For each meeting
     for meeting_path in tqdm(meeting_paths):
-        question_path = os.path.join(meeting_path, "quiz", f"quiz_from_{args.question_file}.json")
 
-        chatgpt = OpenAIWrapper(logger=logger)
+        # Fetch the quiz
+        quiz_path = os.path.join(meeting_path, "quiz", f"quiz_from_{args.question_file}.json")
 
-        # In case question gen failed earlier
+        # In case quiz gen failed earlier
         try:
-            # Read question
-            with open(question_path, "r", encoding="utf-8") as f:
+            # Read quiz
+            with open(quiz_path, "r", encoding="utf-8") as f:
                 quiz = f.read()
         except Exception as e:
             logger.error(f"Something failed, couldnt read question file: {e}")
             continue 
 
+        # Load the quiz as a JSON
         quiz = json.loads(quiz)
-        num_questions = len(quiz)
-        template = "Question {i}: {q}\nCorrect Answer: {c}\nPredicted Answer: {a}\n\n"
-        # ipdb.set_trace()
-        formatted_quiz = [
-            template.format(i=i, q=qca.get('question'), c=qca.get("correct_answer"), a=qca.get(f"answer_using_{args.transcript_file}"))
-            for i, qca in enumerate(quiz)
-        ]
-        formatted_quiz = "".join(formatted_quiz)
+        # num_questions = len(quiz)
 
-        prompt = QUIZ_SCORER_PROMPT.format(
-            quiz=formatted_quiz,
-            num_questions=num_questions
-        )
-
-        response_text = chatgpt.prompt_chatgpt(
-            prompt, 
-            # max_tokens=1024,
-            max_completion_tokens=1024,
-            model=args.model_to_use
-        )
-
-        try:
-            result = json.loads(response_text)
-        except Exception:
-            logger.error(
-                f"Could not parse response. Defaulting to None.\n"
-                f"Response: {response_text}"
+        for q in quiz:
+            user_prompt = QUIZ_SCORER_USER_PROMPT_TEMPLATE.format(
+                question = q['question'],
+                correct_answer = q['correct_answer'],
+                predicted_answer = q[f'answer_using_{args.transcript_file}']
             )
 
-        try: 
-            scores = []
-            for i in range(num_questions):
-                score = result.get(f"question_{i}_score", "n/a")
-                scores.append(score)
+            response = chatgpt.prompt_chatgpt(
+                prompt = user_prompt,
+                max_completion_tokens = 1024,
+                model = args.model_to_use
+            )
 
-            # ipdb.set_trace()
-
-            for qca, s in zip(quiz, scores):
-                qca[f"score_using_{args.transcript_file}"] = s
+            # Parse the response
+            try:
+                response_json = json.loads(response)
+                score = response_json["score"]
+            except Exception:
+                logger.error(
+                    f"Could not parse response as JSON. Defaulting to 0.\n"
+                    f"Response: {response}"
+                )
+                score = 0
             
-            lock = FileLock(f"{question_path}.lock")
-            with lock:
-                with open(question_path, "w", encoding="utf-8") as f:
-                    f.write(json.dumps(quiz, indent=4))
+            # Add the score to the quiz
+            q[f"score_using_{args.transcript_file}"] = score
+
+        
+
+        # ipdb.set_trace()
+
+        # Save the scored quiz
+        # Acquire a lock
+        lock = FileLock(f"{quiz_path}.lock")
+        with lock:
+            with open(quiz_path, "w", encoding="utf-8") as f:
+                f.write(json.dumps(quiz, indent=4))
 
 
-            logger.info("success! scored all the questions")
-        except AssertionError as e:
-            logger.info("Encountered an error")
-            logger.error(str(e))
+        logger.info("Success! Scored all the questions")
+
+
+        
+
+
+
+
+
+        # ipdb.set_trace()
+        # formatted_quiz = [
+        #     template.format(i=i, q=qca.get('question'), c=qca.get("correct_answer"), a=qca.get(f"answer_using_{args.transcript_file}"))
+        #     for i, qca in enumerate(quiz)
+        # ]
+        # formatted_quiz = "".join(formatted_quiz)
+
+        # prompt = QUIZ_SCORER_PROMPT.format(
+        #     quiz=formatted_quiz,
+        #     num_questions=num_questions
+        # )
+
+        # response_text = chatgpt.prompt_chatgpt(
+        #     prompt, 
+        #     # max_tokens=1024,
+        #     max_completion_tokens=1024,
+        #     model=args.model_to_use
+        # )
+
+        # try:
+        #     result = json.loads(response_text)
+        # except Exception:
+        #     logger.error(
+        #         f"Could not parse response. Defaulting to None.\n"
+        #         f"Response: {response_text}"
+        #     )
+
+        # try: 
+        #     scores = []
+        #     for i in range(num_questions):
+        #         score = result.get(f"question_{i}_score", "n/a")
+        #         scores.append(score)
+
+        #     # ipdb.set_trace()
+
+        #     for qca, s in zip(quiz, scores):
+        #         qca[f"score_using_{args.transcript_file}"] = s
+            
+        #     lock = FileLock(f"{question_path}.lock")
+        #     with lock:
+        #         with open(question_path, "w", encoding="utf-8") as f:
+        #             f.write(json.dumps(quiz, indent=4))
+
+
+        #     logger.info("success! scored all the questions")
+        # except AssertionError as e:
+        #     logger.info("Encountered an error")
+        #     logger.error(str(e))
 
     
