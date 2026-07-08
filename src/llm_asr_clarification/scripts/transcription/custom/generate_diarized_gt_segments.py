@@ -97,17 +97,6 @@ def perform_transcription(
             output_scores=True
         )
 
-        # # Diverse Beam Search: deterministic; the Hamming diversity penalty
-        # # forces each beam group to differ from the previous groups
-        # outputs = model.generate(
-        #     **inputs,
-        #     num_beams=num_beams,
-        #     num_beam_groups=num_beams,
-        #     diversity_penalty=diversity_penalty,
-        #     num_return_sequences=num_beams,
-        #     return_dict_in_generate=True,
-        # )
-
     # Decode Token IDs back to text strings
     decoded_results = processor.batch_decode(outputs.sequences, skip_special_tokens=True)
     decoded_results = [text.strip() for text in decoded_results]

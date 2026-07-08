@@ -37,4 +37,4 @@ export PYTORCH_ALLOC_CONF=expandable_segments:True
 # -----------------------------
 # Run the Job (Example: Python Script / Module)
 # -----------------------------
-python run_scripts.py --scripts transcription.custom.generate_diarized_gt_segments
+python run_scripts.py --scripts transcription.custom.generate_diarized_gt_segments --dataset-path ./datasets/amicorpus/validation
