@@ -82,16 +82,57 @@ class RandomBernoulliDetector(MistranscriptionDetector):
     """
     Trivial baseline detector, returns positive predictions with probability p.
     """
-    def __init__(self, p=0.592):
+    def __init__(self, p=0.592, **kwargs):
         """
         The default value of p here is taken from data analysis phase, which is the percent of sentences 
         across the training meetings which are mistranscribed (according to ROUGE-L < 0.5) by whisper_tiny.
         """
+        defaults = {
+            'meeting_path' : "./shared/datasets/amicorpus/train/ES2005d/",
+            'p' : 0.592
+        }
+
+        params  = {**defaults, **kwargs}
+
+        meeting_path = params['meeting_path']
+        p = params['p']
         self.p = p
+
+        # Read the transcript using the provided path
+        beam_results = os.path.join(meeting_path, "artifacts", "beam_results.json")
+        with open(beam_results, "r", encoding="utf-8") as f:
+            lines = f.read()
+        lines = json.loads(lines)
+
+        # Process lines
+        data = []
+        for line in lines:
+            for i in range(1,6):
+                beam_no = f'beam_{i}'
+                beam = line.pop(beam_no)
+    
+                line[f"{beam_no}_text"] = beam["text"]
+                line[f"{beam_no}_asrlogprob"] = beam["asr_avg_log_prob"]
+                line[f"{beam_no}_llmlogprob"] = beam["llm_avg_log_prob"]
+
+            data.append(line)
+
+        df = pd.DataFrame(data)
+        
+        df['num_tokens_text'] = df['beam_1_text'].apply(
+            lambda x: len(LLM_TOKENIZER.encode(x))
+        )
+        self.df = df
 
         
     def pred_mistranscribed(self, line_numbers: list[int]) -> list[bool]:
-        return (np.random.rand(len(line_numbers)) < self.p).tolist()
+        preds = (np.random.rand(len(line_numbers)) < self.p)
+        lenth_filter_mask = self.df['num_tokens_text'] >= 5
+
+        # ipdb.set_trace()
+
+        return (preds & lenth_filter_mask).tolist()
+
 
 
 class GTDetector(MistranscriptionDetector):
@@ -126,7 +167,6 @@ class GTDetector(MistranscriptionDetector):
                 line[f"{beam_no}_text"] = beam["text"]
                 line[f"{beam_no}_asrlogprob"] = beam["asr_avg_log_prob"]
                 line[f"{beam_no}_llmlogprob"] = beam["llm_avg_log_prob"]
-            line["meeting_name"] = meeting_path.split("/")[-1]
 
             data.append(line)
 
@@ -154,7 +194,11 @@ class GTDetector(MistranscriptionDetector):
         
     def pred_mistranscribed(self, line_numbers: list[int]):
         X_sample = self.df.iloc[line_numbers]['rougeL']
-        return (X_sample < self.rougeL_threshold).tolist()
+        preds = X_sample < self.rougeL_threshold
+
+        lenth_filter_mask = self.df['num_tokens_text'] >= 5
+
+        return (preds & lenth_filter_mask).tolist()
 
 
 class RFDetector(MistranscriptionDetector):
@@ -165,8 +209,8 @@ class RFDetector(MistranscriptionDetector):
 
         defaults = {
             'meeting_path' : "./shared/datasets/amicorpus/train/ES2005d/",
-            'model_path' : './model_weights/rf_model.pkl',
-            'prob_threshold' : 0.3583 # Random Forest output prob Threshold determined using data analysis
+            'model_path' : './model_weights/rf_model2.pkl',
+            'prob_threshold' : 0.3745 # Random Forest output prob Threshold determined using data analysis
         }
 
         params  = {**defaults, **kwargs}
@@ -191,7 +235,6 @@ class RFDetector(MistranscriptionDetector):
                 line[f"{beam_no}_text"] = beam["text"]
                 line[f"{beam_no}_asrlogprob"] = beam["asr_avg_log_prob"]
                 line[f"{beam_no}_llmlogprob"] = beam["llm_avg_log_prob"]
-            line["meeting_name"] = meeting_path.split("/")[-1]
 
             data.append(line)
 
@@ -239,7 +282,12 @@ class RFDetector(MistranscriptionDetector):
     def pred_mistranscribed(self, line_numbers: list[int]):
         X_sample = self.df.iloc[line_numbers][self.features]
         pred_probas = self.model.predict_proba(X_sample)[:,1]
-        return (pred_probas >= self.prob_threshold).tolist()
+
+        preds = (pred_probas >= self.prob_threshold)
+
+        lenth_filter_mask = self.df['num_tokens_text'] >= 5
+
+        return (preds & lenth_filter_mask).tolist()
 
 
 
