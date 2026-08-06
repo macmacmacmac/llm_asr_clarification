@@ -9,7 +9,14 @@ import random
 from llm_asr_clarification.models import OracleTranscript, OpenAIWrapper
 from typing import Tuple, List
 import re
+import numpy as np
 from llm_asr_clarification.constants import SAMPLE_MEETINGS
+from llm_asr_clarification.models import MistranscriptionDetector
+from llm_asr_clarification.models.MistranscriptionDetector import (
+    RandomBernoulliDetector,
+    GTDetector,
+    RFDetector
+)
 
 SAMPLING_RATE = 16_000
 GROUND_TRUTH_TRANSCRIPT = "parsed_diarized_gt.txt"
@@ -47,7 +54,7 @@ def run(args_list=None):
     parser.add_argument("--dataset-path", type=str, default="./shared/datasets/amicorpus/train")
     parser.add_argument("--transcript-file", type=str, default="custom_transcript_gt_segments.txt")
     parser.add_argument("--do-sample-meetings", type=bool, default=False)
-    parser.add_argument("--strategy", type=str, default="RANDOM")
+    parser.add_argument("--detectors", nargs="+", default=["RANDOM", "RF", "GT"])
     parser.add_argument("--seed", type=int, default=47)
     
     args, _ = parser.parse_known_args(args_list)
@@ -55,6 +62,7 @@ def run(args_list=None):
     # Parse CLI arguments to global variables
     DATASET_PATH = Path(args.dataset_path)
     TRANSCRIPT_FILE = args.transcript_file
+    GT_FILE = "parsed_diarized_gt.txt"
     global STRATEGY
     STRATEGY = args.strategy
     SEED = args.seed
@@ -74,7 +82,6 @@ def run(args_list=None):
         f"Received the following arguments:\n{received_args_log}"
     )
 
-
     # ┌───────────────────────────────────────────────┐
     # │                   LOAD DATA                   │
     # └───────────────────────────────────────────────┘
@@ -89,77 +96,74 @@ def run(args_list=None):
                           if (f.is_dir() and
                               f.name in SAMPLE_MEETINGS)]
         
+    def clarify_meeting_using_detector(detector_name):
+        # Wrap logging with tqdm
+        with logging_redirect_tqdm(loggers=[logger]):
 
-    # Wrap logging with tqdm
-    with logging_redirect_tqdm(loggers=[logger]):
+            # Process all Meeting Folders
+            for meeting_folder in tqdm(meeting_folders, desc="Processing Meetings"):
+                logger.info(f"Processing meeting {meeting_folder.name}")
 
-        # Process all Meeting Folders
-        for meeting_folder in tqdm(meeting_folders, desc="Processing Meetings"):
-            logger.info(f"Processing meeting {meeting_folder.name}")
+                # Load the generated transcript
+                transcript_path = meeting_folder / "transcripts" / TRANSCRIPT_FILE
+                with open(transcript_path, "r") as f:
+                    transcript_content = f.read()
 
-            transcript_path = meeting_folder / "transcripts" / TRANSCRIPT_FILE
-            oracle_transcript_path = meeting_folder / "transcripts" / GROUND_TRUTH_TRANSCRIPT
+                # Maintain two lists, one stores original line and one stores updated lines
+                original_transcript_lines = transcript_content.split("\n")
+                updated_transcript_lines = original_transcript_lines.copy()
+                num_lines = len(original_transcript_lines)
 
-            # Fetch the Oracle Transcript
-            oracle_transcript = OracleTranscript(
-                transcript_path=oracle_transcript_path,
-                logger=logger
-            )
+                # Load the GT transcript
+                gt_transcript_path = meeting_folder / "transcripts" / GT_FILE
+                with open(gt_transcript_path, "r") as f:
+                    gt_content = f.read()
 
-            # Fetch all lines of the oracle transcript
-            ground_truth_lines = oracle_transcript.get_lines()
+                gt_lines = gt_content.split("\n")
 
-            # Open and Read the generated transcript
-            with open(transcript_path, "r") as f:
-                transcript_content = f.read()
 
-            # Maintain two lists, one stores original line and one stores updated lines
-            original_transcript_lines = transcript_content.split("\n")
-            updated_transcript_lines = original_transcript_lines.copy()
+                # Predict which generated lines are mistranscribed
+                detector_cls_mapping = {
+                    'RANDOM' : RandomBernoulliDetector,
+                    'RF' : RFDetector,
+                    'GT' : GTDetector
+                }
+                detector_cls = detector_cls_mapping[detector_name]
 
-            # Select 20 random lines
-            random_line_idxs = random.choices(range(0, len(original_transcript_lines)), k = 20)
-            
-            # Group them into 10 Pairs
-            random_idx_pairs = list(zip(random_line_idxs[::2], random_line_idxs[1::2]))
-
-            # For each idx pair
-            for idx_pair in random_idx_pairs:
-                # print_timestamps(idx_pair, original_transcript_lines)
-
-                # Choose 1 from the pair
-                chosen_idx = choose_option(idx_pair, original_transcript_lines, ground_truth_lines)
-                chosen_line = original_transcript_lines[chosen_idx]
-
-                # if meeting_folder.name == "ES2005a":
-                #     ipdb.set_trace()
-
-                # Extract timestamps for the chosen line
-                start_time, end_time = extract_timestamps(chosen_line)
+                ipdb.set_trace()
                 
-                # Use Oracle Transcript to fetch timestamp oriented transcription
-                oracle_lines = oracle_transcript.get_oracle_transcription(start_time=start_time, end_time=end_time)
+                detector = detector_cls(meeting_path=transcript_path)
+                preds_bool_mask = detector.pred_mistranscribed(range(num_lines))
+                logger.info(f"This detector predicted: {sum(preds_bool_mask)} mistranscribed lines out of {num_lines} lines")
 
-                # Add extracted timestamps to the oracle lines
-                oracle_lines = [f"({start_time} - {end_time}){line}" for line in oracle_lines]
-
-                # Update transcript line with the combined oracle lines
-                updated_transcript_lines[chosen_idx] = "".join(oracle_lines).strip()
-
-
-                logger.info(f"Clarified timestamps: {start_time} - {end_time}")
-
-
-
-            # ┌───────────────────────────────────────────────┐
-            # │                     SAVE                      │
-            # └───────────────────────────────────────────────┘
-            clarified_file_name = TRANSCRIPT_FILE.split(".")[0] + f"_{STRATEGY.lower()}_clarify.txt"
-            fixed_transcript_file_path = meeting_folder / "transcripts" / clarified_file_name
-            with open(fixed_transcript_file_path, "w", encoding="utf-8") as f:
-                f.write("\n".join(updated_transcript_lines))
+                mistranscribed_lines_idxs = np.arange(num_lines)[preds_bool_mask]
                 
-            logger.info(f"Saved transcript for {fixed_transcript_file_path}\n\n")
+                # Select 20 random lines out of the mistranscribed ones
+                random_line_idxs = np.random.choice(mistranscribed_lines_idxs, 20, replace=False)
+
+                # For each idx 
+                for chosen_idx in random_line_idxs:
+                    chosen_line = original_transcript_lines[chosen_idx]
+                    updated_transcript_lines[chosen_idx] = gt_lines[chosen_idx]
+
+                    # Extract timestamps for the chosen line
+                    start_time, end_time = extract_timestamps(chosen_line)
+
+                    logger.info(f"Clarified timestamps: {start_time} - {end_time}")
+
+                # ┌───────────────────────────────────────────────┐
+                # │                     SAVE                      │
+                # └───────────────────────────────────────────────┘
+                clarified_file_name = TRANSCRIPT_FILE.split(".")[0] + f"_{detector_name.lower()}_clarify.txt"
+                fixed_transcript_file_path = meeting_folder / "transcripts" / clarified_file_name
+                with open(fixed_transcript_file_path, "w", encoding="utf-8") as f:
+                    f.write("\n".join(updated_transcript_lines))
+                    
+                logger.info(f"Saved transcript for {fixed_transcript_file_path}\n\n")
+
+    for det_name in args.detectors:
+        clarify_meeting_using_detector(det_name)
+
 
 
 
