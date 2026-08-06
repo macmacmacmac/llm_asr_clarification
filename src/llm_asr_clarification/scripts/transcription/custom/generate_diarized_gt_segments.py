@@ -282,7 +282,7 @@ def run(args_list=None):
             all_wavs = list(audio_folder.rglob("*.wav"))
 
             # Separate the Mix from the individual Headsets
-            mix_file_path = [f for f in all_wavs if "Mix-Headset" in f.name][0]
+            mix_file_path = next(f for f in all_wavs if "Mix-Headset" in f.name)
             headset_files = [f for f in all_wavs if "Mix-Headset" not in f.name and "Headset" in f.name]
 
             # ┌───────────────────────────────────────────────┐
@@ -313,7 +313,7 @@ def run(args_list=None):
             # │          TRANSCRIPTION AND DIARIZATION        │
             # └───────────────────────────────────────────────┘
             LOGGER.info(f"Transcribing audio: {mix_file_path.name}")
-            waveform, sample_rate = sf.read(mix_file_path) # waveform shape: (num_frames,)
+            waveform, _ = sf.read(mix_file_path) # waveform shape: (num_frames,)
 
             # If stereo (shape [frames, channels]), convert to mono by averaging channels
             if len(waveform.shape) > 1:
