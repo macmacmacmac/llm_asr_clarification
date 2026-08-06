@@ -25,10 +25,13 @@ dist/
 .vscode/
 .idea/
 
-# Ignore datasets and logs except for their gitkeep
-datasets/*
+
+# Ignore everything in shared and logs folder
+# Except for their gitkeeps
+shared/*
 logs/*
-!datasets/.gitkeep
+
+!shared/.gitkeep
 !logs/.gitkeep
 
 # Ignore output files
