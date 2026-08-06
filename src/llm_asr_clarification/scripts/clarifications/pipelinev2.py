@@ -10,7 +10,6 @@ from llm_asr_clarification.models import OracleTranscript, OpenAIWrapper
 from typing import Tuple, List
 import re
 import numpy as np
-from llm_asr_clarification.constants import SAMPLE_MEETINGS
 from llm_asr_clarification.models import MistranscriptionDetector
 from llm_asr_clarification.models.MistranscriptionDetector import (
     RandomBernoulliDetector,
@@ -53,7 +52,6 @@ def run(args_list=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset-path", type=str, default="./shared/datasets/amicorpus/train")
     parser.add_argument("--transcript-file", type=str, default="custom_transcript_gt_segments.txt")
-    parser.add_argument("--do-sample-meetings", type=bool, default=False)
     parser.add_argument("--detectors", nargs="+", default=["RANDOM", "RF", "GT"])
     parser.add_argument("--seed", type=int, default=47)
     
@@ -63,8 +61,6 @@ def run(args_list=None):
     DATASET_PATH = Path(args.dataset_path)
     TRANSCRIPT_FILE = args.transcript_file
     GT_FILE = "parsed_diarized_gt.txt"
-    global STRATEGY
-    STRATEGY = args.strategy
     SEED = args.seed
 
     random.seed(SEED)
@@ -85,54 +81,45 @@ def run(args_list=None):
     # ┌───────────────────────────────────────────────┐
     # │                   LOAD DATA                   │
     # └───────────────────────────────────────────────┘
-    if args.meeting_name:
-        meeting_folders=[DATASET_PATH / args.meeting_name]
-    else:
-        # Fetch all dataset meeting folders
-        # meeting_folders = [f for f in DATASET_PATH.iterdir() 
-        #                     if (f.is_dir() and 
-        #                         f.name not in ["ami_public_manual_1.6.2", "xinlu_data"])]
-        meeting_folders = [f for f in DATASET_PATH.iterdir()
-                          if (f.is_dir() and
-                              f.name in SAMPLE_MEETINGS)]
+    meeting_folders = [f for f in DATASET_PATH.iterdir() if f.is_dir()]
+
+    def get_detector(detector_name, meeting_folder) -> MistranscriptionDetector:
+        cls_map = {
+            'RANDOM' : RandomBernoulliDetector,
+            'RF' : RFDetector,
+            'GT' : GTDetector
+        }
+
+        return cls_map[detector_name](meeting_path=meeting_folder)
         
-    def clarify_meeting_using_detector(detector_name):
-        # Wrap logging with tqdm
-        with logging_redirect_tqdm(loggers=[logger]):
+    # Wrap logging with tqdm
+    with logging_redirect_tqdm(loggers=[logger]):
 
-            # Process all Meeting Folders
-            for meeting_folder in tqdm(meeting_folders, desc="Processing Meetings"):
-                logger.info(f"Processing meeting {meeting_folder.name}")
+        # Process all Meeting Folders
+        for meeting_folder in tqdm(meeting_folders, desc="Processing Meetings"):
+            logger.info(f"Processing meeting {meeting_folder.name}")
 
-                # Load the generated transcript
-                transcript_path = meeting_folder / "transcripts" / TRANSCRIPT_FILE
-                with open(transcript_path, "r") as f:
-                    transcript_content = f.read()
+            # Load the generated transcript
+            transcript_path = meeting_folder / "transcripts" / TRANSCRIPT_FILE
+            with open(transcript_path, "r") as f:
+                transcript_content = f.read().strip()
 
-                # Maintain two lists, one stores original line and one stores updated lines
-                original_transcript_lines = transcript_content.split("\n")
-                updated_transcript_lines = original_transcript_lines.copy()
-                num_lines = len(original_transcript_lines)
+            # Maintain two lists, one stores original line and one stores updated lines
+            original_transcript_lines = transcript_content.split("\n")
+            updated_transcript_lines = original_transcript_lines.copy()
+            num_lines = len(original_transcript_lines)
 
-                # Load the GT transcript
-                gt_transcript_path = meeting_folder / "transcripts" / GT_FILE
-                with open(gt_transcript_path, "r") as f:
-                    gt_content = f.read()
+            # Load the GT transcript
+            gt_transcript_path = meeting_folder / "transcripts" / GT_FILE
+            with open(gt_transcript_path, "r") as f:
+                gt_content = f.read().strip()
 
-                gt_lines = gt_content.split("\n")
+            gt_lines = gt_content.split("\n")
 
+            # ipdb.set_trace()
 
-                # Predict which generated lines are mistranscribed
-                detector_cls_mapping = {
-                    'RANDOM' : RandomBernoulliDetector,
-                    'RF' : RFDetector,
-                    'GT' : GTDetector
-                }
-                detector_cls = detector_cls_mapping[detector_name]
-
-                ipdb.set_trace()
-                
-                detector = detector_cls(meeting_path=transcript_path)
+            for detector_name in args.detectors:
+                detector = get_detector(detector_name, meeting_folder)
                 preds_bool_mask = detector.pred_mistranscribed(range(num_lines))
                 logger.info(f"This detector predicted: {sum(preds_bool_mask)} mistranscribed lines out of {num_lines} lines")
 
@@ -160,9 +147,6 @@ def run(args_list=None):
                     f.write("\n".join(updated_transcript_lines))
                     
                 logger.info(f"Saved transcript for {fixed_transcript_file_path}\n\n")
-
-    for det_name in args.detectors:
-        clarify_meeting_using_detector(det_name)
 
 
 
