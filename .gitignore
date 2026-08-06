@@ -25,6 +25,7 @@ dist/
 .vscode/
 .idea/
 
+
 # Ignore everything in shared and logs folder
 # Except for their gitkeeps
 shared/*
@@ -32,3 +33,6 @@ logs/*
 
 !shared/.gitkeep
 !logs/.gitkeep
+
+# Ignore output files
+*.out

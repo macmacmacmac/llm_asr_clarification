@@ -11,7 +11,9 @@ import transformers
 from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq
 from speechbrain.inference.speaker import EncoderClassifier
 import torch.nn.functional as F
-from llm_asr_clarification.utils.diarization_utils import extract_enrollment_embedding
+from llm_asr_clarification.utils.diarization_utils import (
+    extract_enrollment_embedding, get_headset_to_speaker_map
+)
 import whisper
 
 # Completely mute all warnings
@@ -45,7 +47,7 @@ def perform_transcription(
             **inputs,
             num_beams=num_beams,
             num_return_sequences=num_beams,
-            temperature = 0.5,
+            temperature = 0.1,
             do_sample = True
         )
 
@@ -60,7 +62,7 @@ def perform_transcription(
     if print_beam_results:
         ipdb.set_trace()
 
-    return decoded_results[0]
+    return decoded_results
 
 
 
@@ -75,7 +77,7 @@ def run(args_list=None):
     # Perform CLI Argument Parsing
     parser = argparse.ArgumentParser()
     parser.add_argument("--model-name", type=str, default="openai/whisper-tiny")
-    parser.add_argument("--dataset-path", type=str, default="./datasets/amicorpus")
+    parser.add_argument("--dataset-path", type=str, default="./datasets/amicorpus/train")
     parser.add_argument("--whisper-size", type=str, default="tiny")
     parser.add_argument("--meeting-name", type=str, default="")
 
@@ -114,9 +116,7 @@ def run(args_list=None):
         meeting_folders=[DATASET_PATH / args.meeting_name]
     else:
         # Fetch all dataset meeting folders
-        meeting_folders = [f for f in DATASET_PATH.iterdir() 
-                            if (f.is_dir() and 
-                                f.name not in ["ami_public_manual_1.6.2", "xinlu_data"])]
+        meeting_folders = [f for f in DATASET_PATH.iterdir() if f.is_dir() ]
     
 
     # ┌───────────────────────────────────────────────┐
@@ -173,7 +173,7 @@ def run(args_list=None):
             all_wavs = list(audio_folder.rglob("*.wav"))
 
             # Separate the Mix from the individual Headsets
-            mix_file_path = [f for f in all_wavs if "Mix-Headset" in f.name][0]
+            mix_file_path = next(f for f in all_wavs if "Mix-Headset" in f.name)
             headset_files = [f for f in all_wavs if "Mix-Headset" not in f.name and "Headset" in f.name]
 
             # ┌───────────────────────────────────────────────┐
@@ -181,10 +181,13 @@ def run(args_list=None):
             # └───────────────────────────────────────────────┘
             LOGGER.info(f"Extracting enrollment embeddings for {len(headset_files)} speakers...")
             enrolled_profiles = {}
+
+            # Construct a map of headset to speaker name
+            headset_to_speaker_map = get_headset_to_speaker_map(headset_files)
             
             for headset_file in headset_files:
                 # Use the filename (e.g., "ES2005a.Headset-0") as the speaker label
-                speaker_id = headset_file.stem.split('.')[-1] 
+                speaker_id = headset_to_speaker_map[headset_file.stem.split('.')[-1]]
                 
                 speaker_embedding = extract_enrollment_embedding(
                     headset_file, 
@@ -212,7 +215,7 @@ def run(args_list=None):
             # │          TRANSCRIPTION AND DIARIZATION        │
             # └───────────────────────────────────────────────┘
             LOGGER.info(f"Transcribing audio: {mix_file_path.name}")
-            waveform, sample_rate = sf.read(mix_file_path) # waveform shape: (num_frames,)
+            waveform, _ = sf.read(mix_file_path) # waveform shape: (num_frames,)
 
             # If stereo (shape [frames, channels]), convert to mono by averaging channels
             if len(waveform.shape) > 1:
@@ -220,8 +223,8 @@ def run(args_list=None):
 
             waveform = waveform.astype("float32")
 
-            # Pad by some milliseconds (in frames) for Whisper's acoustic context
-            pad_frames = int(0.1 * SAMPLING_RATE)
+            # # Pad by some milliseconds (in frames) for Whisper's acoustic context
+            # pad_frames = int(0.1 * SAMPLING_RATE)
 
             # Diarization variables
             speaker_separated_data = []
@@ -241,17 +244,13 @@ def run(args_list=None):
                 chunk = waveform[start_frame: end_frame]
 
                 # TRANSCRIPTION
-                text = perform_transcription(
+                beam_results = perform_transcription(
                     model = model, 
                     processor = processor, 
                     audio_chunk = chunk, 
-                    print_beam_results=True,
+                    # print_beam_results=True,
                     num_beams=3
                 )
-                
-                # Skip further processing if no text was transcribed
-                if not text:
-                    continue
 
                 # DIARIZATION
                 chunk_tensor = torch.from_numpy(chunk).unsqueeze(0).to(DEVICE) # (1, num_frames)
@@ -280,7 +279,7 @@ def run(args_list=None):
                 
                 speaker_separated_data.append({
                     "speaker": best_speaker,
-                    "text": text,
+                    "beam_results": beam_results,
                     "start": int(segment["start"]),
                     "end": int(segment["end"])
                 })
@@ -289,33 +288,12 @@ def run(args_list=None):
             # │                FORMAT & SAVE                  │
             # └───────────────────────────────────────────────┘
             diarized_lines = []
-            if speaker_separated_data:
 
-                # Use the first data as the initial point
-                last_speaker = speaker_separated_data[0]["speaker"]
-                combined_text = speaker_separated_data[0]["text"]
-                start = speaker_separated_data[0]["start"]
-                end = speaker_separated_data[0]["end"]
+            for data in speaker_separated_data:
+                for text in data["beam_results"]:
+                    diarized_lines.append(f"({data["start"]} - {data["end"]})[{data["speaker"]}]: {text.strip()}\n")
+                diarized_lines.append(f"{"-" * 50}\n")
 
-
-                for data in speaker_separated_data[1:]:
-                    # If the speaker hasn't changed
-                    if data["speaker"] == last_speaker:
-                        # Combine the texts
-                        combined_text += " " + data["text"]
-
-                        # Merge the timestamps
-                        end = data["end"]
-                    
-                    # The speaker has changed
-                    else:
-                        diarized_lines.append(f"({start} - {end})[{last_speaker}]: {combined_text.strip()}\n")
-                        last_speaker = data["speaker"]
-                        combined_text = data["text"]
-                        start = data["start"]
-                        end = data["end"]
-
-                diarized_lines.append(f"({start} - {end})[{last_speaker}]: {combined_text.strip()}\n")
 
             transcript_file_path = transcripts_folder / f"custom_{MODEL_NAME.split('/')[-1]}_transcript.txt"
             with open(transcript_file_path, "w", encoding="utf-8") as f:
