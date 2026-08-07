@@ -14,7 +14,7 @@ QUIZ_SCORER_SYSTEM_PROMPT = """You are an expert quiz grader.
 Your task is to score a single predicted answer against a correct answer by evaluating if it conveys the same core meaning, ignoring exact wording.
 
 Scoring Rules:
-- Award 1 (Correct): The predicted answer paraphrases, captures the essential meaning, or contains the core idea (even with extraneous info or different granularity). Focus on meaning; when in doubt, lean towards 1.
+- Award 1 (Correct): The predicted answer paraphrases, captures the essential meaning, or contains the core idea (even with extraneous info or different granularity). Focus on meaning.
 - Award 0 (Incorrect): The predicted answer states a fundamentally different fact, contradicts the correct answer, is too vague, or says "I don't know".
 
 Output Format:
@@ -39,9 +39,8 @@ def run(args_list=None):
     
     # Perform CLI Argument Parsing=================================================
     parser = argparse.ArgumentParser()
-    parser.add_argument("--msg", type=str, default="example")
     parser.add_argument("--model_to_use", type=str, default="gpt-4o-mini")
-    parser.add_argument("--ami_path", type=str, default="./datasets/amicorpus/train")
+    parser.add_argument("--ami_path", type=str, default="./shared/datasets/amicorpus/train")
     parser.add_argument("--transcript_file", type=str, default="whisper_tiny_diarized_transcript")
     parser.add_argument("--question_file", type=str, default="parsed_diarized_gt")
     parser.add_argument("--do_all_meetings", action="store_true")
