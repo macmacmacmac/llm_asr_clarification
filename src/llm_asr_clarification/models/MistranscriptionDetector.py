@@ -81,6 +81,9 @@ class MistranscriptionDetector(ABC):
 class RandomBernoulliDetector(MistranscriptionDetector):
     """
     Trivial baseline detector, returns positive predictions with probability p.
+    
+    Input:
+    - int p : probability of returning true
     """
     def __init__(self, p=0.592, **kwargs):
         """
@@ -137,7 +140,10 @@ class RandomBernoulliDetector(MistranscriptionDetector):
 
 class GTDetector(MistranscriptionDetector):
     """
-    Teacher detector based on GT used to train other models.    
+    Teacher detector based on GT used to train other models.  
+
+    Input:
+    - int rougeL_threshold : threshold for rougeL to return true
     """
     def __init__(self, **kwargs):
 
@@ -204,6 +210,10 @@ class GTDetector(MistranscriptionDetector):
 class RFDetector(MistranscriptionDetector):
     """
     Random forest detector. Trained in log_prob_beams_elbowplot.ipynb
+
+    Input:
+    - int prob_threshold : conf threshold to return true
+    - str model_path : path to load model weights from
     """
     def __init__(self, **kwargs):
 

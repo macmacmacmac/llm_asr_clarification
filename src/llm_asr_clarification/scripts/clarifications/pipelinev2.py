@@ -53,6 +53,8 @@ def run(args_list=None):
     parser.add_argument("--dataset-path", type=str, default="./shared/datasets/amicorpus/train")
     parser.add_argument("--transcript-file", type=str, default="custom_transcript_gt_segments.txt")
     parser.add_argument("--detectors", nargs="+", default=["RANDOM", "RF", "GT"])
+    parser.add_argument("--num_lines", type=int, default=20)
+
     parser.add_argument("--seed", type=int, default=47)
     
     args, _ = parser.parse_known_args(args_list)
@@ -116,9 +118,11 @@ def run(args_list=None):
 
             gt_lines = gt_content.split("\n")
 
-            # ipdb.set_trace()
+            ipdb.set_trace()
 
             for detector_name in args.detectors:
+
+                # retrieve detector and pred mistranscriptions
                 detector = get_detector(detector_name, meeting_folder)
                 preds_bool_mask = detector.pred_mistranscribed(range(num_lines))
                 logger.info(f"This detector predicted: {sum(preds_bool_mask)} mistranscribed lines out of {num_lines} lines")
@@ -126,7 +130,7 @@ def run(args_list=None):
                 mistranscribed_lines_idxs = np.arange(num_lines)[preds_bool_mask]
                 
                 # Select 20 random lines out of the mistranscribed ones
-                random_line_idxs = np.random.choice(mistranscribed_lines_idxs, 20, replace=False)
+                random_line_idxs = np.random.choice(mistranscribed_lines_idxs, args.num_lines, replace=False)
 
                 # For each idx 
                 for chosen_idx in random_line_idxs:
