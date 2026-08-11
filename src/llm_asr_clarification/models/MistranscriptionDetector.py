@@ -102,7 +102,7 @@ class RandomBernoulliDetector(MistranscriptionDetector):
         self.p = p
 
         # Read the transcript using the provided path
-        beam_results = os.path.join(meeting_path, "artifacts", "beam_results.json")
+        beam_results = os.path.join(meeting_path, "artifacts", "beam_results_2.json")
         with open(beam_results, "r", encoding="utf-8") as f:
             lines = f.read()
         lines = json.loads(lines)
@@ -158,7 +158,7 @@ class GTDetector(MistranscriptionDetector):
         self.rougeL_threshold = params['rougeL_threshold']
 
         # Read the transcript using the provided path
-        beam_results = os.path.join(meeting_path, "artifacts", "beam_results.json")
+        beam_results = os.path.join(meeting_path, "artifacts", "beam_results_2.json")
         with open(beam_results, "r", encoding="utf-8") as f:
             lines = f.read()
         lines = json.loads(lines)
@@ -219,7 +219,7 @@ class RFDetector(MistranscriptionDetector):
 
         defaults = {
             'meeting_path' : "./shared/datasets/amicorpus/train/ES2005d/",
-            'model_path' : './model_weights/rf_model2.pkl',
+            'model_path' : './shared/model_weights/rf_model2.pkl',
             'prob_threshold' : 0.3745 # Random Forest output prob Threshold determined using data analysis
         }
 
@@ -230,7 +230,7 @@ class RFDetector(MistranscriptionDetector):
         self.prob_threshold = params['prob_threshold']
 
         # Read the transcript using the provided path
-        beam_results = os.path.join(meeting_path, "artifacts", "beam_results.json")
+        beam_results = os.path.join(meeting_path, "artifacts", "beam_results_2.json")
         with open(beam_results, "r", encoding="utf-8") as f:
             lines = f.read()
         lines = json.loads(lines)

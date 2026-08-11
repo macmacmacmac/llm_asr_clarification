@@ -50,7 +50,7 @@ def run(args_list=None):
     
     # Perform CLI Argument Parsing
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset-path", type=str, default="./shared/datasets/amicorpus/train")
+    parser.add_argument("--dataset-path", type=str, default="./shared/datasets/amicorpus/validation")
     parser.add_argument("--transcript-file", type=str, default="custom_transcript_gt_segments.txt")
     parser.add_argument("--detectors", nargs="+", default=["RANDOM", "RF", "GT"])
     parser.add_argument("--num_lines", type=int, default=20)
@@ -118,7 +118,7 @@ def run(args_list=None):
 
             gt_lines = gt_content.split("\n")
 
-            ipdb.set_trace()
+            # ipdb.set_trace()
 
             for detector_name in args.detectors:
 
@@ -130,7 +130,11 @@ def run(args_list=None):
                 mistranscribed_lines_idxs = np.arange(num_lines)[preds_bool_mask]
                 
                 # Select 20 random lines out of the mistranscribed ones
-                random_line_idxs = np.random.choice(mistranscribed_lines_idxs, args.num_lines, replace=False)
+                random_line_idxs = np.random.choice(
+                    mistranscribed_lines_idxs, 
+                    min(len(mistranscribed_lines_idxs), args.num_lines), 
+                    replace=False
+                )
 
                 # For each idx 
                 for chosen_idx in random_line_idxs:

@@ -13,7 +13,7 @@ def run(args_list=None):
     # Perform CLI Argument Parsing=================================================
     parser = argparse.ArgumentParser()
     parser.add_argument("--msg", type=str, default="example")
-    parser.add_argument("--ami_path", type=str, default="./datasets/amicorpus")
+    parser.add_argument("--ami_path", type=str, default="./shared/datasets/amicorpus")
 
     args, _ = parser.parse_known_args(args_list)
 
@@ -171,13 +171,38 @@ def run(args_list=None):
 
         # transcript_lines.append(f"({start} - {end})[Speaker {last_speaker}]: {combined_text.strip()}\n")
 
+        train_meetings = os.listdir(os.path.join(
+            args.ami_path, "train"
+        ))
+        val_meetings = os.listdir(os.path.join(
+                    args.ami_path, "validation"
+        ))
+        if meeting_name in train_meetings:
+            output_path = os.path.join(
+                args.ami_path,
+                "train",
+                meeting_name,
+                "transcripts",
+                "parsed_diarized_gt.txt",
+            )
+        elif meeting_name in val_meetings:
+            output_path = os.path.join(
+                args.ami_path,
+                "validation",
+                meeting_name,
+                "transcripts",
+                "parsed_diarized_gt.txt",
+            )
+        else:
+            output_path = os.path.join(
+                args.ami_path,
+                "test",
+                meeting_name,
+                "transcripts",
+                "parsed_diarized_gt.txt",
+            )
 
-        output_path = os.path.join(
-            args.ami_path,
-            meeting_name,
-            "transcripts",
-            "parsed_diarized_gt.txt",
-        )
+        # ipdb.set_trace()
 
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
