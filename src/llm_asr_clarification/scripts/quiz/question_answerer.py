@@ -16,7 +16,7 @@ def run(args_list=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("--msg", type=str, default="example")
     parser.add_argument("--model_to_use", type=str, default="gpt-4o-mini")
-    parser.add_argument("--ami_path", type=str, default="./datasets/amicorpus/train")
+    parser.add_argument("--ami_path", type=str, default="./shared/datasets/amicorpus/train")
     parser.add_argument("--transcript_file", type=str, default="whisper_tiny_diarized_transcript")
     parser.add_argument("--question_file", type=str, default="parsed_diarized_gt")
     parser.add_argument("--do_all_meetings", action="store_true")

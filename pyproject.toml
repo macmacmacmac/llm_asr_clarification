@@ -20,6 +20,7 @@ dependencies = [
     "openai-whisper>=20250625",
     "qwen-asr>=0.0.6",
     "rouge-score>=0.1.2",
+    "sentence-transformers>=5.7.0",
     "soundfile>=0.13.1",
     "speechbrain>=1.1.0",
     "statsmodels>=0.14.6",
