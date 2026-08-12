@@ -18,7 +18,9 @@ transcript_files = [
     # 'custom_transcript_gt_segments',
     # 'custom_transcript_gt_segments_gt_clarify',
     # 'custom_transcript_gt_segments_random_clarify',
-    'custom_transcript_gt_segments_rf_clarify',
+    # 'custom_transcript_gt_segments_rf_clarify',
+    # 'custom_transcript_gt_segments_clarify_only_importance',
+    'custom_transcript_gt_segments_gt_clarify2',
 ]
 question_files = ['parsed_diarized_gt']
 MODEL_TO_USE = 'gpt-4o-mini'
