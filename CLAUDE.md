@@ -2,6 +2,18 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## IMPORTANT: never execute scripts
+
+This is a Slurm-cluster project. **Do not run any of the scripts in this repo** — no `run_scripts.py`, no `python -m ...`, no `sbatch`/`srun`, no notebook execution, not even "quick" one-off invocations to check behavior. Jobs consume shared cluster resources, hit paid APIs, and write into the shared dataset directory.
+
+Verifying that a script actually runs correctly is the **user's** responsibility. After making changes, the only check to perform is a compile check:
+
+```bash
+python -m py_compile <changed_file.py>
+```
+
+Report the result of that and stop; hand any runtime verification back to the user with the exact command they should run.
+
 ## What this project is
 
 A research codebase studying whether *clarifying* mistranscribed ASR segments improves downstream comprehension of meeting transcripts. The AMI meeting corpus is transcribed with Whisper, a detector flags likely-mistranscribed lines, "important" lines among those are replaced with ground truth (simulating a clarification request), and the resulting transcript is evaluated by having an LLM answer a quiz generated from the ground-truth transcript.
