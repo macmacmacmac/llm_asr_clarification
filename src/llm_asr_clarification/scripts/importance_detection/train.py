@@ -1,12 +1,13 @@
 import os
 import argparse
+import numpy as np
 import pandas as pd
 from pathlib import Path
 from tqdm import tqdm
 import torch
 from torch import nn
 from torch.utils.data import Dataset, DataLoader
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+from sklearn.metrics import roc_auc_score, average_precision_score
 from llm_asr_clarification.models.ImportanceLSTM import ImportanceLSTM
 from llm_asr_clarification import get_logger
 
@@ -33,12 +34,10 @@ class ImportanceDataset(Dataset):
 # ┌───────────────────────────────────────────────┐
 # │                 HELPER METHODS                │
 # └───────────────────────────────────────────────┘
-def get_metrics(y_true, y_pred):
-    acc = accuracy_score(y_true, y_pred)
-    prec = precision_score(y_true, y_pred, zero_division=0)
-    rec = recall_score(y_true, y_pred, zero_division=0)
-    f1 = f1_score(y_true, y_pred, zero_division=0)
-    return acc, prec, rec, f1
+def get_metrics(y_true, y_score):
+    roc_auc = roc_auc_score(y_true, y_score)
+    pr_auc = average_precision_score(y_true, y_score)
+    return roc_auc, pr_auc
 
 
 # Driver Code
@@ -50,9 +49,9 @@ def run(args_list=None):
     parser.add_argument("--train-data-path", type=str, default="./shared/datasets/importance_detector_datasets/train.pt", help="Path to training .pt file")
     parser.add_argument("--val-data-path", type=str, default="./shared/datasets/importance_detector_datasets/validation.pt", help="Path to validation .pt file")
     parser.add_argument("--out-dir", type=str, default="./shared/model_weights/importance_lstm", help="Directory to save model weights")
-    parser.add_argument("--batch-size", type=int, default=32, help="Batch size")
+    parser.add_argument("--batch-size", type=int, default=64, help="Batch size")
     parser.add_argument("--epochs", type=int, default=10, help="Number of epochs")
-    parser.add_argument("--lr", type=float, default=1e-5, help="Learning rate")
+    parser.add_argument("--lr", type=float, default=5e-5, help="Learning rate")
     
     args = parser.parse_args(args_list)
 
@@ -113,6 +112,8 @@ def run(args_list=None):
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
     best_val_loss = float('inf')
+    best_val_probs = None
+    best_val_labels = None
     training_stats = []
 
     
@@ -163,7 +164,7 @@ def run(args_list=None):
         # Init 0 val loss and empty preds and labels lists for accuracy calculations
         model.eval()
         val_loss = 0.0
-        all_preds = []
+        all_probs = []
         all_labels = []
 
         # Freeze the model
@@ -183,35 +184,35 @@ def run(args_list=None):
                 loss = loss_fn(logits, label)
                 val_loss += loss.item()
 
-                # Calculate predictions using standard 0.5 threshold on probabilities
-                preds = (torch.sigmoid(logits) >= 0.5).int().cpu().numpy()
+                # Calculate continuous probabilities for ROC-AUC
+                probs = torch.sigmoid(logits).cpu().numpy()
 
                 # Accumulate Preds and Labels
-                all_preds.extend(preds)
+                all_probs.extend(probs)
                 all_labels.extend(label.cpu().numpy())
 
         # Calculate avg val loss
         avg_val_loss = val_loss / len(val_loader)
 
         # Calculate eval metrics
-        acc, prec, rec, f1 = get_metrics(all_labels, all_preds)
+        roc_auc, pr_auc = get_metrics(all_labels, all_probs)
         
-        logger.info(f"Epoch {epoch+1}/{args.epochs} - Val Loss: {avg_val_loss:.4f} | Acc: {acc:.4f} | Prec: {prec:.4f} | Rec: {rec:.4f} | F1: {f1:.4f}")
+        logger.info(f"Epoch {epoch+1}/{args.epochs} - Val Loss: {avg_val_loss:.4f} | ROC-AUC: {roc_auc:.4f} | PR-AUC: {pr_auc:.4f}")
 
         training_stats.append({
             "epoch": epoch + 1,
             "train_loss": round(avg_train_loss, 4),
             "val_loss": round(avg_val_loss, 4),
-            "accuracy": round(acc, 4),
-            "precision": round(prec, 4),
-            "recall": round(rec, 4),
-            "f1_score": round(f1, 4)
+            "roc_auc": round(roc_auc, 4),
+            "pr_auc": round(pr_auc, 4)
         })
         
 
-        # Save Best Model
+        # Save Best Model and its predictions
         if val_loader and avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
+            best_val_probs = all_probs
+            best_val_labels = all_labels
             best_ckpt_path = OUT_DIR / "importance_lstm.pt"
             torch.save(model.state_dict(), best_ckpt_path)
             logger.info(f"Validation loss improved to {best_val_loss:.4f}. Saved best model to {best_ckpt_path}")
@@ -223,5 +224,14 @@ def run(args_list=None):
     df = pd.DataFrame(training_stats)
     df.to_csv(csv_path, index=False)
     logger.info(f"Saved training statistics to {csv_path}")
+
+    # Save validation predictions from best epoch for plotting ROC/PR curves
+    if best_val_probs is not None:
+        preds_path = OUT_DIR / "val_predictions.pt"
+        torch.save({
+            "labels": np.array(best_val_labels),
+            "probs": np.array(best_val_probs)
+        }, preds_path)
+        logger.info(f"Saved best-epoch validation predictions to {preds_path}")
 
     logger.info("Training complete!")
