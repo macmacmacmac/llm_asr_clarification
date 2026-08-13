@@ -3,7 +3,7 @@ from torch import nn
 
 
 class ImportanceLSTM(nn.Module):
-    def __init__(self, embed_dim=384, hidden_dim=384, num_layers=3, dropout=0.2):
+    def __init__(self, embed_dim=384, hidden_dim=384, num_layers=1, dropout=0.2):
         super().__init__()
         self.lstm = nn.LSTM(
             input_size=embed_dim,
@@ -16,10 +16,10 @@ class ImportanceLSTM(nn.Module):
         mlp_input_dim = hidden_dim + embed_dim
         
         self.mlp = nn.Sequential(
-            nn.Linear(mlp_input_dim, 128),
+            nn.Linear(mlp_input_dim, mlp_input_dim // 2),
             nn.ReLU(),
             nn.Dropout(dropout),
-            nn.Linear(128, 1)
+            nn.Linear(mlp_input_dim // 2, 1)
         )
 
     def forward(self, context, target):

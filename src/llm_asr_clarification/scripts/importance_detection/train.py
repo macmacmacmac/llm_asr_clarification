@@ -10,6 +10,7 @@ from torch.utils.data import Dataset, DataLoader
 from sklearn.metrics import roc_auc_score, average_precision_score
 from llm_asr_clarification.models.ImportanceLSTM import ImportanceLSTM
 from llm_asr_clarification import get_logger
+import ipdb
 
 # ┌───────────────────────────────────────────────┐
 # │               DATASET DEFINITION              │
@@ -17,8 +18,8 @@ from llm_asr_clarification import get_logger
 class ImportanceDataset(Dataset):
     def __init__(self, data_path):
         data = torch.load(data_path, map_location='cpu')
-        self.contexts = data["contexts"]
-        self.targets = data["targets"]
+        self.contexts = data["context_embs"]
+        self.targets = data["target_embs"]
         self.labels = data["labels"]
 
     def __len__(self):
@@ -46,11 +47,11 @@ def run(args_list=None):
 
     # Perform CLI Argument Parsing
     parser = argparse.ArgumentParser(description="Train ImportanceLSTM model")
-    parser.add_argument("--dataset-path", type=str, default="./shared/datasets/importance_detector_teacher_datasets", help="Path to training .pt file")
+    parser.add_argument("--dataset-path", type=str, default="./shared/datasets/importance_detector_student_datasets", help="Path to training .pt file")
     parser.add_argument("--out-dir", type=str, default="./shared/model_weights/importance_lstm", help="Directory to save model weights")
     parser.add_argument("--batch-size", type=int, default=64, help="Batch size")
     parser.add_argument("--epochs", type=int, default=10, help="Number of epochs")
-    parser.add_argument("--lr", type=float, default=5e-5, help="Learning rate")
+    parser.add_argument("--lr", type=float, default=3e-5, help="Learning rate")
     
     args = parser.parse_args(args_list)
 
@@ -100,7 +101,7 @@ def run(args_list=None):
     # │          INIT MODEL, LOSS, OPTIMIZER          │
     # └───────────────────────────────────────────────┘
     # Initialize model, loss, optimizer
-    model = ImportanceLSTM().to(DEVICE)
+    model = ImportanceLSTM(num_layers=1).to(DEVICE)
     loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
     optimizer = torch.optim.Adam(model.parameters(), lr=LR)
 
