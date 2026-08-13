@@ -75,7 +75,7 @@ def run(args_list=None):
     # (only if per-sample predictions are available)
     # ──────────────────────────────────────────────
     if has_preds:
-        data = torch.load(preds_path, map_location='cpu')
+        data = torch.load(preds_path, map_location='cpu', weights_only=False)
         labels = np.array(data["labels"])
         probs = np.array(data["probs"])
 
