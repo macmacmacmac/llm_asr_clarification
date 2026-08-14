@@ -8,18 +8,52 @@ import json
 from filelock import FileLock
 
 
+BASELINE_SYS_PROMPT = """# Task Description:
+You are an expert at answering quizzes meant to test your understanding on the meetings from the AMI Corpus Dataset.
+You will be provided with the name of the relevant meeting from the AMI Corpus Dataset. Your task is to answer {num_questions} quiz questions
+that only someone who closely understands that meeting will be able to answer.
+
+## Output Format:
+
+Output your {num_questions} quiz answers in JSON format like so.
+THERE SHOULD BE PRECISELY {num_questions} ANSWERS. 
+
+{{
+  "question_0_answer": (str) "your answer here",
+  "question_1_answer": (str) "your answer here",
+  ...
+  "question_({num_questions}-1)_answer": (str) "your answer here"
+}}
+
+Return a single JSON object ONLY. Do NOT output anything else or any preamble. 
+ONLY output response in the given format.
+"""
+
+BASELINE_USR_PROMPT = """# Input AMI Corpus Meeting Name and Questions:
+
+## Meeting Name:
+{meeting_name}
+
+## Questions:
+{questions}
+
+# Output JSON of Answers:
+
+"""
+
+
 # Driver Code
 def run(args_list=None):
     exp_name = os.path.basename(__file__)
     
-    # Perform CLI Argument Parsing=================================================
+    # Perform CLI Argument Parsing
     parser = argparse.ArgumentParser()
-    parser.add_argument("--msg", type=str, default="example")
     parser.add_argument("--model_to_use", type=str, default="gpt-4o-mini")
     parser.add_argument("--ami_path", type=str, default="./shared/datasets/amicorpus/train")
     parser.add_argument("--transcript_file", type=str, default="whisper_tiny_diarized_transcript")
     parser.add_argument("--question_file", type=str, default="parsed_diarized_gt")
     parser.add_argument("--do_all_meetings", action="store_true")
+    parser.add_argument("--baseline_prompting", action="store_true")
     parser.add_argument("--meeting_name", type=str, default="ES2005d")
     
 
@@ -50,6 +84,10 @@ def run(args_list=None):
 
 
     for meeting_path in tqdm(meeting_paths):
+        # Extract Meeting Name
+        meeting_name = meeting_path.split("/")[-1]
+
+        # Prep paths for transcript and quiz
         transcript_path = os.path.join(meeting_path, "transcripts", f"{args.transcript_file}.txt")
         question_path = os.path.join(meeting_path, "quiz", f"quiz_from_{args.question_file}.json")
         
@@ -69,21 +107,29 @@ def run(args_list=None):
             continue 
         question_answers = json.loads(question_answers)
         questions = [qa['question'] for qa in question_answers]
-        correct_answers = [qa['correct_answer'] for qa in question_answers]
 
         num_questions = len(questions)
         formatted_questions = [f"Question {i}: {q}\n" for i, q in enumerate(questions)]
         formatted_questions = "".join(formatted_questions)
 
-    
-        system_prompt = QUIZ_ANSWER_GENERATOR_SYSTEM_PROMPT.format(
-            num_questions=num_questions
-        )
-        user_prompt = QUIZ_ANSWER_GENERATOR_USER_PROMPT.format(
-            transcript=transcript_text,
-            questions=formatted_questions,
-            num_questions=num_questions
-        )
+        # If baseline prompting is requested
+        if args.baseline_prompting:
+            system_prompt = BASELINE_SYS_PROMPT.format(num_questions=num_questions)
+            user_prompt = BASELINE_USR_PROMPT.format(
+                meeting_name = meeting_name,
+                questions = formatted_questions
+            )
+
+        # Otherwise use ASR transcript based prompting
+        else:
+            system_prompt = QUIZ_ANSWER_GENERATOR_SYSTEM_PROMPT.format(
+                num_questions=num_questions
+            )
+            user_prompt = QUIZ_ANSWER_GENERATOR_USER_PROMPT.format(
+                transcript=transcript_text,
+                questions=formatted_questions
+            )
+
 
         chatgpt = OpenAIWrapper(
             system_prompt=system_prompt,
@@ -119,7 +165,10 @@ def run(args_list=None):
 
             # Set new answers
             for qc, a in zip(question_answers, answers):
-                qc[f"answer_using_{args.transcript_file}"] = a
+                if args.baseline_prompting:
+                    qc["answer_using_baseline_prompting"] = a
+                else:                
+                    qc[f"answer_using_{args.transcript_file}"] = a
             
             lock = FileLock(f"{question_path}.lock")
             with lock:

@@ -19,6 +19,7 @@ from llm_asr_clarification.utils.diarization_utils import (
 )
 from llm_asr_clarification.utils import extract_timestamps
 import json
+import numpy as np
 
 # Completely mute all warnings
 transformers.logging.set_verbosity_error()
@@ -165,10 +166,11 @@ def run(args_list=None):
     # Perform CLI Argument Parsing
     parser = argparse.ArgumentParser()
     parser.add_argument("--asr-model-name", type=str, default="openai/whisper-tiny")
-    parser.add_argument("--dataset-path", type=str, default="./datasets/amicorpus/train")
+    parser.add_argument("--dataset-path", type=str, default="./shared/datasets/amicorpus/train")
     parser.add_argument("--llm-model-name", type=str, default="meta-llama/Llama-3.1-8B-Instruct")
     parser.add_argument("--num-beams", type=int, default=5)
     parser.add_argument("--meeting-name", type=str, default="")
+    parser.add_argument("--add-noise", action="store_true")
 
     args, _ = parser.parse_known_args(args_list)
 
@@ -177,6 +179,7 @@ def run(args_list=None):
     LLM_MODEL_NAME = args.llm_model_name
     DATASET_PATH = Path(args.dataset_path)
     NUM_BEAMS = args.num_beams
+    ADD_NOISE = args.add_noise
 
     # Other Global Variables
     global DEVICE
@@ -319,6 +322,10 @@ def run(args_list=None):
             if len(waveform.shape) > 1:
                 waveform = waveform.mean(axis=1)
 
+            # Add Gaussion Noise (Optional)
+            if ADD_NOISE:
+                waveform = waveform + np.random.normal(loc=0.0, scale=0.002, size=waveform.shape)
+
             waveform = waveform.astype("float32")
 
             # Diarization variables
@@ -388,7 +395,10 @@ def run(args_list=None):
                 beam_1_text = data["beam_results"]['beam_1']["text"]
                 diarized_lines.append(f"({data['start']} - {data['end']})[{data['speaker']}]: {beam_1_text.strip()}\n")
 
-            transcript_file_path = transcripts_folder / "custom_transcript_gt_segments.txt"
+            if ADD_NOISE:
+                transcript_file_path = transcripts_folder / "custom_transcript_gt_segments_noise.txt"
+            else:
+                transcript_file_path = transcripts_folder / "custom_transcript_gt_segments.txt"
             with open(transcript_file_path, "w", encoding="utf-8") as f:
                 f.write("".join(diarized_lines))
                 
@@ -411,7 +421,11 @@ def run(args_list=None):
 
             artifacts_folder = meeting_folder / "artifacts"
             os.makedirs(artifacts_folder, exist_ok = True)
-            beam_results_path = artifacts_folder / "beam_results_2.json"
+
+            if ADD_NOISE:
+                beam_results_path = artifacts_folder / "beam_results_noise.json"
+            else:
+                beam_results_path = artifacts_folder / "beam_results.json"
             with open(beam_results_path, "w") as f:
                 json.dump(json_results, f, indent=4)
 
