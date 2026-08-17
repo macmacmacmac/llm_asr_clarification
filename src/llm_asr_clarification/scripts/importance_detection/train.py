@@ -10,6 +10,7 @@ from torch.utils.data import Dataset, DataLoader
 from sklearn.metrics import roc_auc_score, average_precision_score
 from llm_asr_clarification.models.ImportanceLSTM import ImportanceLSTM
 from llm_asr_clarification import get_logger
+import ipdb
 
 # ┌───────────────────────────────────────────────┐
 # │               DATASET DEFINITION              │
@@ -17,8 +18,8 @@ from llm_asr_clarification import get_logger
 class ImportanceDataset(Dataset):
     def __init__(self, data_path):
         data = torch.load(data_path, map_location='cpu')
-        self.contexts = data["contexts"]
-        self.targets = data["targets"]
+        self.contexts = data["context_embs"]
+        self.targets = data["target_embs"]
         self.labels = data["labels"]
 
     def __len__(self):
@@ -46,19 +47,17 @@ def run(args_list=None):
 
     # Perform CLI Argument Parsing
     parser = argparse.ArgumentParser(description="Train ImportanceLSTM model")
-    parser.add_argument("--train-data-path", type=str, default="./shared/datasets/importance_detector_datasets/train.pt", help="Path to training .pt file")
-    parser.add_argument("--val-data-path", type=str, default="./shared/datasets/importance_detector_datasets/validation.pt", help="Path to validation .pt file")
+    parser.add_argument("--dataset-path", type=str, default="./shared/datasets/importance_detector_student_datasets", help="Path to training .pt file")
     parser.add_argument("--out-dir", type=str, default="./shared/model_weights/importance_lstm", help="Directory to save model weights")
     parser.add_argument("--batch-size", type=int, default=64, help="Batch size")
     parser.add_argument("--epochs", type=int, default=10, help="Number of epochs")
-    parser.add_argument("--lr", type=float, default=5e-5, help="Learning rate")
+    parser.add_argument("--lr", type=float, default=3e-5, help="Learning rate")
     
     args = parser.parse_args(args_list)
 
     # Parse CLI arguments to global variables
-    TRAIN_DATA_PATH = args.train_data_path
-    VAL_DATA_PATH = args.val_data_path
-    OUT_DIR = Path(args.out_dir)
+    DATASET_PATH = Path(args.dataset_path)
+    OUT_DIR = Path(args.out_dir) / DATASET_PATH.name
     BATCH_SIZE = args.batch_size
     EPOCHS = args.epochs
     LR = args.lr
@@ -83,9 +82,12 @@ def run(args_list=None):
     # ┌───────────────────────────────────────────────┐
     # │                   LOAD DATA                   │
     # └───────────────────────────────────────────────┘
-    logger.info(f"Loading training data from {TRAIN_DATA_PATH}")
-    train_dataset = ImportanceDataset(TRAIN_DATA_PATH)
+    logger.info(f"Loading training data from {DATASET_PATH}")
+    train_dataset = ImportanceDataset(DATASET_PATH / "train.pt")
     train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
+
+    val_dataset = ImportanceDataset(DATASET_PATH / "validation.pt")
+    val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
 
     # Calculate pos_weight for imbalanced dataset
     num_pos = torch.sum(train_dataset.labels == 1).item()
@@ -95,16 +97,11 @@ def run(args_list=None):
     logger.info(f"Applying pos_weight of {pos_weight.item():.2f} to BCEWithLogitsLoss")
 
 
-    logger.info(f"Loading validation data from {VAL_DATA_PATH}")
-    val_dataset = ImportanceDataset(VAL_DATA_PATH)
-    val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
-    
-
     # ┌───────────────────────────────────────────────┐
     # │          INIT MODEL, LOSS, OPTIMIZER          │
     # └───────────────────────────────────────────────┘
     # Initialize model, loss, optimizer
-    model = ImportanceLSTM().to(DEVICE)
+    model = ImportanceLSTM(num_layers=1).to(DEVICE)
     loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
     optimizer = torch.optim.Adam(model.parameters(), lr=LR)
 

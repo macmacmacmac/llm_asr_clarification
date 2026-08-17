@@ -45,7 +45,7 @@ def run(args_list=None):
     parser.add_argument("--question_file", type=str, default="parsed_diarized_gt")
     parser.add_argument("--do_all_meetings", action="store_true")
     parser.add_argument("--meeting_name", type=str, default="ES2005d")
-    parser.add_argument("--chunk_size", type=int, default=10)
+    parser.add_argument("--baseline_prompting", action="store_true")
 
     args, _ = parser.parse_known_args(args_list)
 
@@ -94,11 +94,20 @@ def run(args_list=None):
         quiz = json.loads(quiz)
         # num_questions = len(quiz)
 
+
+        # Determine Answer and Score fields based on baseline vs regular prompting
+        if args.baseline_prompting:
+            answer_field = "answer_using_baseline_prompting"
+            score_field = "score_using_baseline_prompting"
+        else:
+            answer_field = f"answer_using_{args.transcript_file}"
+            score_field = f"score_using_{args.transcript_file}"
+
         for q in quiz:
             user_prompt = QUIZ_SCORER_USER_PROMPT_TEMPLATE.format(
                 question = q['question'],
                 correct_answer = q['correct_answer'],
-                predicted_answer = q[f'answer_using_{args.transcript_file}']
+                predicted_answer = q[answer_field]
             )
 
             response = chatgpt.prompt_chatgpt(
@@ -119,7 +128,7 @@ def run(args_list=None):
                 score = 0
             
             # Add the score to the quiz
-            q[f"score_using_{args.transcript_file}"] = score
+            q[score_field] = score
 
         
 
