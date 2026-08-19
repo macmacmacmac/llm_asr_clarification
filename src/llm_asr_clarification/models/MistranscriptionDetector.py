@@ -85,7 +85,7 @@ class RandomBernoulliDetector(MistranscriptionDetector):
     Input:
     - int p : probability of returning true
     """
-    def __init__(self, p=0.592, **kwargs):
+    def __init__(self, **kwargs):
         """
         The default value of p here is taken from data analysis phase, which is the percent of sentences 
         across the training meetings which are mistranscribed (according to ROUGE-L < 0.5) by whisper_tiny.
@@ -136,6 +136,17 @@ class RandomBernoulliDetector(MistranscriptionDetector):
 
         return (preds & lenth_filter_mask).tolist()
 
+
+
+class AllDetector(MistranscriptionDetector):
+    """
+    Trivial upperbound detector that flags all lines as mistranscribed, without any length filters.
+    """
+    def __init__(self, **kwargs):
+        pass
+
+    def pred_mistranscribed(self, line_numbers: list[int]) -> list[bool]:
+        return [True] * len(line_numbers)
 
 
 class GTDetector(MistranscriptionDetector):
