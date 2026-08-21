@@ -83,9 +83,11 @@ def run(args_list=None):
 
         # In case quiz gen failed earlier
         try:
-            # Read quiz
-            with open(quiz_path, "r", encoding="utf-8") as f:
-                quiz = f.read()
+            # Read quiz safely with a lock
+            lock = FileLock(f"{quiz_path}.lock")
+            with lock:
+                with open(quiz_path, "r", encoding="utf-8") as f:
+                    quiz = f.read()
         except Exception as e:
             logger.error(f"Something failed, couldnt read question file: {e}")
             continue 
@@ -138,8 +140,16 @@ def run(args_list=None):
         # Acquire a lock
         lock = FileLock(f"{quiz_path}.lock")
         with lock:
+            # Re-read to get latest state from any concurrent jobs
+            with open(quiz_path, "r", encoding="utf-8") as f:
+                latest_quiz = json.loads(f.read())
+                
+            # Apply the computed scores to the latest state
+            for latest_q, q in zip(latest_quiz, quiz):
+                latest_q[score_field] = q[score_field]
+
             with open(quiz_path, "w", encoding="utf-8") as f:
-                f.write(json.dumps(quiz, indent=4))
+                f.write(json.dumps(latest_quiz, indent=4))
 
 
         logger.info("Success! Scored all the questions")
