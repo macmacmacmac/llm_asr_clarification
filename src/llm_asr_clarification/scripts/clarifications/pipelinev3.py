@@ -54,16 +54,17 @@ def run(args_list=None):
     
     # Perform CLI Argument Parsing
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset-path", type=str, default="./shared/datasets/amicorpus/train")
+    parser.add_argument("--ami_path", type=str, default="./shared/datasets/amicorpus/train")
     parser.add_argument("--clarify-file", type=str, default="custom_transcript_gt_segments.txt")
     parser.add_argument("--mistranscription-detector", type=str, default="ALL")
-    parser.add_argument("--importance-detector", type=str, default="GT")
+    parser.add_argument("--importance-detector", type=str, default="LSTM")
+    parser.add_argument("--num_lines", type=int, default=20)
     parser.add_argument("--seed", type=int, default=47)
     
     args, _ = parser.parse_known_args(args_list)
 
     # Parse CLI arguments to global variables
-    DATASET_PATH = Path(args.dataset_path)
+    DATASET_PATH = Path(args.ami_path)
     TRANSCRIPT_FILE = args.clarify_file
     GT_FILE = "parsed_diarized_gt.txt"
     SEED = args.seed
@@ -137,6 +138,19 @@ def run(args_list=None):
 
             # ipdb.set_trace()
 
+            # Either up or down sample so we only clarify k lines
+            if len(imp_line_idxs) < args.num_lines:
+                num_lines_needed = args.num_lines - len(imp_line_idxs)
+                available_lines = list(set(line_numbers) - set(imp_line_idxs))
+                sampled_lines = random.sample(available_lines, min(num_lines_needed, len(available_lines)))
+                imp_line_idxs.extend(sampled_lines)
+                logger.info(f"Sampled {len(sampled_lines)} additional lines to reach {args.num_lines} lines.")
+            elif len(imp_line_idxs) > args.num_lines:
+                imp_line_idxs = random.sample(imp_line_idxs, args.num_lines)
+                logger.info(f"Downsampled to {args.num_lines} lines.")
+
+            
+
             # For each idx 
             for chosen_idx in imp_line_idxs:
                 chosen_line = original_transcript_lines[chosen_idx]
@@ -147,10 +161,12 @@ def run(args_list=None):
 
                 logger.info(f"Clarified timestamps: {start_time} - {end_time}")
 
+            logger.info(f"Total lines clarified: {len(imp_line_idxs)}")
+
             # ┌───────────────────────────────────────────────┐
             # │                     SAVE                      │
             # └───────────────────────────────────────────────┘
-            clarified_file_name = f"{TRANSCRIPT_FILE.split('.')[0]}_{args.mistranscription_detector.lower()}_{args.importance_detector.lower()}_clarify3.txt"
+            clarified_file_name = f"{TRANSCRIPT_FILE.split('.')[0]}_{args.mistranscription_detector.lower()}_{args.importance_detector.lower()}_{args.num_lines}_clarify3.txt"
             fixed_transcript_file_path = meeting_folder / "transcripts" / clarified_file_name
             with open(fixed_transcript_file_path, "w", encoding="utf-8") as f:
                 f.write("\n".join(updated_transcript_lines))
