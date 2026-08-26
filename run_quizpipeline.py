@@ -30,8 +30,20 @@ ARGUMENTS = {
     'splits' : ['validation'],
     # 'seeds' : ["1", "2", "3", "4", "5"],
     'clarification_num_lines': ["10", "20", "30", "40", "50"],
-    'importance_detectors' : ["LSTM", "GT"],
-    'mistranscript_detectors' : ["RF", "GT", "ALL"]
+    'importance_detectors' : [
+        "LSTM", 
+        "GT",
+        "ALL"
+    ],
+    'mistranscript_detectors' : [
+        "RF", 
+        "GT",
+        "ALL"
+    ],
+    'versions' : [
+        # '3', 
+        '4'
+    ]
 }
 
 MODEL_TO_USE = 'gpt-4o-mini' #'gpt-5.4-mini'
@@ -48,8 +60,9 @@ for arg in combinations:
     clarification_num_line = arg['clarification_num_lines']
     importance_detector = arg['importance_detectors']
     mistranscript_detector = arg['mistranscript_detectors']
+    version = arg['versions']
 
-    transcript_file = f"custom_transcript_gt_segments_{mistranscript_detector.lower()}_{importance_detector.lower()}_{clarification_num_line}_clarify3"
+    transcript_file = f"custom_transcript_gt_segments_{mistranscript_detector.lower()}_{importance_detector.lower()}_{clarification_num_line}_clarify{version}"
 
     command_args = [
         "sbatch",
@@ -57,7 +70,7 @@ for arg in combinations:
         "-o", f"quiz_{transcript_file}_{split}.out",
         "-e", f"quiz_{transcript_file}_{split}.out",
         "cpu_job.sh",
-        "--scripts", "clarifications.pipelinev3", "quiz.question_answerer", "quiz.question_scorer",
+        "--scripts", f"clarifications.pipelinev{version}", "quiz.question_answerer", "quiz.question_scorer",
         "--ami_path", f"./shared/datasets/amicorpus/{split}",
         "--num_lines", clarification_num_line,
         "--mistranscription-detector", mistranscript_detector,
