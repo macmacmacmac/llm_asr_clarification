@@ -8,6 +8,7 @@ import torch
 from sentence_transformers import SentenceTransformer
 from sentence_transformers.util import cos_sim
 from llm_asr_clarification import get_logger
+import ipdb
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 SIM_MODEL = SentenceTransformer('all-MiniLM-L6-v2', device=device)
@@ -41,7 +42,8 @@ def run(args_list=None):
     parser.add_argument("--dataset-path", type=str, default="./shared/datasets/amicorpus/train")
     parser.add_argument("--transcript-file", type=str, default="custom_transcript_gt_segments.txt")
     parser.add_argument("--gt-file", type=str, default="parsed_diarized_gt.txt")
-    parser.add_argument("--out-dir", type=str, default="./shared/datasets/importance_detector_datasets")
+    parser.add_argument("--student", action="store_true")
+    parser.add_argument("--out-dir", type=str, default="./shared/datasets/importance_detector_student_datasets")
     parser.add_argument("--window-size", type=int, default=10)
     
     args, _ = parser.parse_known_args(args_list)
@@ -71,6 +73,8 @@ def run(args_list=None):
     meeting_folders = [f for f in DATASET_PATH.iterdir() if f.is_dir()]
 
     # Lists to store contexts, targets and labels
+    all_contexts_embs = []
+    all_targets_embs = []
     all_contexts = []
     all_targets = []
     all_labels = []
@@ -122,12 +126,17 @@ def run(args_list=None):
             # Generate Embeddings for gt and gen segments
             gt_embeddings = SIM_MODEL.encode(clean_gt, convert_to_tensor=True).cpu()
             gen_embeddings = SIM_MODEL.encode(clean_gen, convert_to_tensor=True).cpu()
-
             
             # Create sliding windows for each label
             for i in range(args.window_size, len(gt_lines)):
                 # Get context: last 10 segments
-                context = gt_embeddings[i - args.window_size: i]
+                if args.student:
+                    context = gen_embeddings[i - args.window_size: i]
+                    all_contexts.append(gen_lines[i - args.window_size: i])
+                else:
+                    context = gt_embeddings[i - args.window_size: i]
+                    all_contexts.append(gt_lines[i - args.window_size: i])
+
 
                 # Get target: current segment
                 target = gen_embeddings[i]
@@ -136,9 +145,12 @@ def run(args_list=None):
                 label = labels[i]
 
                 # Append context, target and label into lists
-                all_contexts.append(context)
-                all_targets.append(target)
+                all_targets.append(gen_lines[i])
+                all_contexts_embs.append(context)
+                all_targets_embs.append(target)
                 all_labels.append(label)
+
+                ipdb.set_trace()
 
 
     # If no context was found, exit the script
@@ -148,19 +160,21 @@ def run(args_list=None):
 
     # Stack all context, targets and labels into Torch tensors
     logger.info("Stacking tensors...")
-    X_context = torch.stack(all_contexts)
-    X_target = torch.stack(all_targets)
+    X_context_embs = torch.stack(all_contexts_embs)
+    X_target_embs = torch.stack(all_targets_embs)
     Y_labels = torch.stack(all_labels)
 
 
     # Log the shape of all tensors
-    logger.info(f"Dataset shape: Contexts: {X_context.shape}, Targets: {X_target.shape}, Labels: {Y_labels.shape}")
+    logger.info(f"Dataset shape: Contexts: {X_context_embs.shape}, Targets: {X_target_embs.shape}, Labels: {Y_labels.shape}")
 
     # Save the tensors
     out_file = OUT_DIR / f"{DATASET_FILE_NAME}.pt"
     dataset_dict = {
-        "contexts": X_context,
-        "targets": X_target,
+        "context_embs": X_context_embs,
+        "target_embs": X_target_embs,
+        "contexts": all_contexts,
+        "targets": all_targets,
         "labels": Y_labels
     }
     
