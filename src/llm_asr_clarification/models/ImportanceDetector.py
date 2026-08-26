@@ -16,7 +16,7 @@ class ImportanceDetector(ABC):
         pass
 
     @abstractmethod
-    def get_important_lines(self, line_numbers: list[int]) -> list[bool]:
+    def get_important_lines(self, line_numbers: list[int], return_conf: bool = False):
         pass
 
 class RandomImportanceDetector(ImportanceDetector):
@@ -27,12 +27,26 @@ class RandomImportanceDetector(ImportanceDetector):
         params = {**defaults, **kwargs}
         self.num_lines = params['num_lines']
         
-    def get_important_lines(self, line_numbers: list[int]) -> list[bool]:
+    def get_important_lines(self, line_numbers: list[int], return_conf: bool = False):
         # Return True for random `num_lines`
         mask = np.zeros(len(line_numbers), dtype=bool)
         idx = np.random.choice(len(line_numbers), min(len(line_numbers), self.num_lines), replace=False)
         mask[idx] = True
         return mask.tolist()
+
+class ALLImportanceDetector(ImportanceDetector):
+    """
+    Trivial upperbound detector that flags all lines as important.
+    """
+    def __init__(self, **kwargs):
+        pass
+
+    def get_important_lines(self, line_numbers: list[int], return_conf: bool = False):
+        preds = [True] * len(line_numbers)
+        if return_conf:
+            return preds, [1.0] * len(line_numbers)
+        return preds
+
 
 class GTImportanceDetector(ImportanceDetector):
     def __init__(self, **kwargs):
@@ -56,7 +70,7 @@ class GTImportanceDetector(ImportanceDetector):
             gt_content = f.read().strip()
         self.gt_lines = gt_content.split("\n")
         
-    def get_important_lines(self, line_numbers: list[int]) -> list[bool]:
+    def get_important_lines(self, line_numbers: list[int], return_conf: bool = False):
         # Clean segments
         clean_segments = [s.split(":")[-1] for s in self.gt_lines]
         
@@ -75,7 +89,13 @@ class GTImportanceDetector(ImportanceDetector):
             if idx < total_lines:
                 mask[idx] = True
                 
-        # Return the boolean values for the requested line_numbers
+        if return_conf:
+            confs = cos_matrix.max(dim=0).values.numpy()
+            c_min, c_max = confs.min(), confs.max()
+            if c_max > c_min:
+                confs = (confs - c_min) / (c_max - c_min)
+            confs = confs.tolist()
+            return [mask[i] for i in line_numbers], [confs[i] for i in line_numbers]
         return [mask[i] for i in line_numbers]
 
 
@@ -103,7 +123,7 @@ class LSTMImportanceDetector(ImportanceDetector):
         self.model.load_state_dict(torch.load(params['model_path'], map_location=self.device))
         self.model.eval()
 
-    def get_important_lines(self, line_numbers: list[int]) -> list[bool]:
+    def get_important_lines(self, line_numbers: list[int], return_conf: bool = False):
         clean_segments = [s.split(":")[-1] for s in self.transcript_lines]
         embeds = SIM_MODEL.encode(clean_segments, convert_to_tensor=True) # shape (N, 384)
         
@@ -127,5 +147,12 @@ class LSTMImportanceDetector(ImportanceDetector):
                 logit = self.model(context_emb, target_emb)
                 prob = torch.sigmoid(logit).item()
                 preds.append(prob >= self.prob_threshold)
+                if return_conf:
+                    if not hasattr(self, '_confs'): self._confs = []
+                    self._confs.append(prob)
                 
+        if return_conf:
+            confs = self._confs
+            self._confs = []
+            return preds, confs
         return preds

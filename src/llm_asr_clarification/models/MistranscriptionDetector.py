@@ -74,7 +74,7 @@ class MistranscriptionDetector(ABC):
         pass
 
     @abstractmethod
-    def pred_mistranscribed(self, line_numbers: list[int]) -> list[bool]:
+    def pred_mistranscribed(self, line_numbers: list[int], return_conf: bool = False):
         pass
 
 
@@ -128,13 +128,17 @@ class RandomBernoulliDetector(MistranscriptionDetector):
         self.df = df
 
         
-    def pred_mistranscribed(self, line_numbers: list[int]) -> list[bool]:
-        preds = (np.random.rand(len(line_numbers)) < self.p)
+    def pred_mistranscribed(self, line_numbers: list[int], return_conf: bool = False):
+        confs = np.random.rand(len(line_numbers))
+        preds = (confs < self.p)
         lenth_filter_mask = self.df['num_tokens_text'] >= 5
 
         # ipdb.set_trace()
 
-        return (preds & lenth_filter_mask).tolist()
+        final_preds = (preds & lenth_filter_mask).tolist()
+        if return_conf:
+            return final_preds, confs.tolist()
+        return final_preds
 
 
 
@@ -145,8 +149,11 @@ class AllDetector(MistranscriptionDetector):
     def __init__(self, **kwargs):
         pass
 
-    def pred_mistranscribed(self, line_numbers: list[int]) -> list[bool]:
-        return [True] * len(line_numbers)
+    def pred_mistranscribed(self, line_numbers: list[int], return_conf: bool = False):
+        preds = [True] * len(line_numbers)
+        if return_conf:
+            return preds, [1.0] * len(line_numbers)
+        return preds
 
 
 class GTDetector(MistranscriptionDetector):
@@ -209,13 +216,17 @@ class GTDetector(MistranscriptionDetector):
 
         self.df = df
         
-    def pred_mistranscribed(self, line_numbers: list[int]):
+    def pred_mistranscribed(self, line_numbers: list[int], return_conf: bool = False):
         X_sample = self.df.iloc[line_numbers]['rougeL']
         preds = X_sample < self.rougeL_threshold
 
         lenth_filter_mask = self.df['num_tokens_text'] >= 5
-
-        return (preds & lenth_filter_mask).tolist()
+        final_preds = (preds & lenth_filter_mask).tolist()
+        
+        if return_conf:
+            confs = (1.0 - X_sample).tolist() # Higher is more mistranscribed
+            return final_preds, confs
+        return final_preds
 
 
 class RFDetector(MistranscriptionDetector):
@@ -300,15 +311,18 @@ class RFDetector(MistranscriptionDetector):
             self.features = self.model.feature_names_in_
 
         
-    def pred_mistranscribed(self, line_numbers: list[int]):
+    def pred_mistranscribed(self, line_numbers: list[int], return_conf: bool = False):
         X_sample = self.df.iloc[line_numbers][self.features]
         pred_probas = self.model.predict_proba(X_sample)[:,1]
 
         preds = (pred_probas >= self.prob_threshold)
 
         lenth_filter_mask = self.df['num_tokens_text'] >= 5
+        final_preds = (preds & lenth_filter_mask).tolist()
 
-        return (preds & lenth_filter_mask).tolist()
+        if return_conf:
+            return final_preds, pred_probas.tolist()
+        return final_preds
 
 
 

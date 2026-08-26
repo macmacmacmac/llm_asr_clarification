@@ -8,7 +8,6 @@ import random
 import re
 import numpy as np
 import ipdb
-import matplotlib.pyplot as plt
 
 from llm_asr_clarification.models.MistranscriptionDetector import (
     RandomBernoulliDetector,
@@ -63,8 +62,6 @@ def run(args_list=None):
     parser.add_argument("--importance-detector", type=str, default="LSTM")
     parser.add_argument("--num_lines", type=int, default=20)
     parser.add_argument("--seed", type=int, default=47)
-    parser.add_argument("--visualize", action="store_true", default=False,
-                        help="Generate a histogram of important-segment counts per meeting")
     
     args, _ = parser.parse_known_args(args_list)
 
@@ -94,9 +91,6 @@ def run(args_list=None):
     # │                   LOAD DATA                   │
     # └───────────────────────────────────────────────┘
     meeting_folders = [f for f in DATASET_PATH.iterdir() if f.is_dir()]
-    importance_counts = []  # (meeting_name, num_important) for visualization
-
-    # ipdb.set_trace()
 
     def get_mis_detector(detector_name, meeting_folder):
         return MIS_CLS_MAP[detector_name](meeting_path=meeting_folder)
@@ -130,33 +124,26 @@ def run(args_list=None):
 
             # Retrieve Mistranscription Detector
             mis_detector = get_mis_detector(args.mistranscription_detector, meeting_folder)
-            mis_preds_bool_mask = mis_detector.pred_mistranscribed(line_numbers)
+            mis_preds_bool_mask, mis_confs = mis_detector.pred_mistranscribed(line_numbers, return_conf=True)
             num_mistranscribed = sum(mis_preds_bool_mask)
             logger.info(f"Mistranscription detector predicted: {num_mistranscribed} mistranscribed lines out of {num_lines} lines")
 
             # Retrieve Importance Detector
             imp_detector = get_imp_detector(args.importance_detector, meeting_folder, TRANSCRIPT_FILE)
-            imp_preds_bool_mask = imp_detector.get_important_lines(line_numbers)
+            imp_preds_bool_mask, imp_confs = imp_detector.get_important_lines(line_numbers, return_conf=True)
             num_important = sum(imp_preds_bool_mask)
             logger.info(f"Importance detector predicted: {num_important} important lines out of {num_lines} lines")
-            importance_counts.append((meeting_folder.name, num_important))
 
-            # Intersect masks
-            imp_line_idxs = [i for i in line_numbers if mis_preds_bool_mask[i] and imp_preds_bool_mask[i]]
-            logger.info(f"Intersection resulted in {len(imp_line_idxs)} lines to clarify")
-
-            # ipdb.set_trace()
-
-            # Either up or down sample so we only clarify k lines
-            if len(imp_line_idxs) < args.num_lines:
-                num_lines_needed = args.num_lines - len(imp_line_idxs)
-                available_lines = list(set(line_numbers) - set(imp_line_idxs))
-                sampled_lines = random.sample(available_lines, min(num_lines_needed, len(available_lines)))
-                imp_line_idxs.extend(sampled_lines)
-                logger.info(f"Sampled {len(sampled_lines)} additional lines to reach {args.num_lines} lines.")
-            elif len(imp_line_idxs) > args.num_lines:
-                imp_line_idxs = random.sample(imp_line_idxs, args.num_lines)
-                logger.info(f"Downsampled to {args.num_lines} lines.")
+            # Combine confidences
+            final_scores = [mis_confs[i] + imp_confs[i] for i in line_numbers]
+            
+            # Shuffle line_numbers so ties are broken randomly, then rank ALL lines by final_scores
+            random.shuffle(line_numbers)
+            ranked_lines = sorted(line_numbers, key=lambda i: final_scores[i], reverse=True)
+            
+            # Select top args.num_lines
+            imp_line_idxs = ranked_lines[:args.num_lines]
+            logger.info(f"Selected top {len(imp_line_idxs)} lines based on combined confidences.")
 
             
 
@@ -175,48 +162,10 @@ def run(args_list=None):
             # ┌───────────────────────────────────────────────┐
             # │                     SAVE                      │
             # └───────────────────────────────────────────────┘
-            clarified_file_name = f"{TRANSCRIPT_FILE.split('.')[0]}_{args.mistranscription_detector.lower()}_{args.importance_detector.lower()}_{args.num_lines}_clarify3.txt"
+            clarified_file_name = f"{TRANSCRIPT_FILE.split('.')[0]}_{args.mistranscription_detector.lower()}_{args.importance_detector.lower()}_{args.num_lines}_clarify4.txt"
             fixed_transcript_file_path = meeting_folder / "transcripts" / clarified_file_name
             with open(fixed_transcript_file_path, "w", encoding="utf-8") as f:
                 f.write("\n".join(updated_transcript_lines))
                 
-            # logger.info(f"Saved transcript for {fixed_transcript_file_path}\n\n")
-
-    # ┌───────────────────────────────────────────────┐
-    # │               VISUALIZATION                   │
-    # └───────────────────────────────────────────────┘
-    if args.visualize and importance_counts:
-        _, counts = zip(*importance_counts)
-        counts = np.array(counts)
-
-        fig, ax = plt.subplots(figsize=(8, 5))
-
-        # Histogram of counts
-        ax.hist(counts, bins=range(int(counts.max()) + 2),
-                color="steelblue", edgecolor="black", linewidth=0.5, align="left")
-        ax.set_xlabel("# Important Segments in a Meeting")
-        ax.set_ylabel("# Meetings")
-        ax.set_title(
-            f"Distribution of Important Segments per Meeting "
-            f"(detector={args.importance_detector})"
-        )
-        ax.yaxis.get_major_locator().set_params(integer=True)
-
-        # Annotate summary statistics
-        stats_text = (
-            f"n = {len(counts)} meetings\n"
-            f"mean = {counts.mean():.1f}\n"
-            f"median = {np.median(counts):.1f}\n"
-            f"std = {counts.std():.1f}\n"
-            f"min = {counts.min()}, max = {counts.max()}"
-        )
-        ax.text(0.97, 0.95, stats_text, transform=ax.transAxes,
-                fontsize=9, verticalalignment="top", horizontalalignment="right",
-                bbox={"boxstyle":"round,pad=0.4", "facecolor":"wheat", "alpha":0.8})
-
-        plt.tight_layout()
-        viz_path = DATASET_PATH / f"importance_distribution_{args.importance_detector.lower()}.png"
-        fig.savefig(viz_path, dpi=200, bbox_inches="tight")
-        plt.close(fig)
-        logger.info(f"Saved importance distribution plot to {viz_path}")
+            logger.info(f"Saved transcript for {fixed_transcript_file_path}\n\n")
 
