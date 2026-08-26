@@ -1,78 +1,86 @@
 import os
 import subprocess
+from itertools import product
 
+ARGUMENTS = {
+    # 'transcript_files' : [
+    #     # 'whisper_tiny_diarized_transcript',
+    #     # 'whisper_tiny_diarized_transcript_random_clarify',
+    #     # 'whisper_tiny_diarized_transcript_llm-orig-ctx_clarify',
+    #     # 'whisper_tiny_diarized_transcript_llm-gt-ctx_clarify',
+    #     # 'whisper_tiny_diarized_transcript_llm-orig-ctx_clarify_sample2',
+    #     # 'whisper_tiny_diarized_transcript_llm-gt-ctx_clarify_sample2',
+    #     # 'qwen_transcript',
+    #     # 'tiny_transcript',
+    #     # 'large_transcript',
+    #     # 'whisper-large-v3_transcript',
+    #     # 'whisper-tiny_transcript',
+    #     # 'parsed_diarized_gt',
+    #     'custom_transcript_gt_segments',
+    #     # 'custom_transcript_gt_segments_gt_clarify',
+    #     # 'custom_transcript_gt_segments_random_clarify',
+    #     # 'custom_transcript_gt_segments_rf_clarify',
+    #     # 'custom_transcript_gt_segments_clarify_only_importance',
+    #     # 'custom_transcript_gt_segments_gt_clarify2',
+    #     # 'custom_transcript_gt_segments_noise',
+    #     # 'custom_transcript_gt_segments_all_gt_clarify3',
+    #     # 'custom_transcript_gt_segments_all_lstm_clarify3',
+    #     # 'custom_transcript_gt_segments_gt_lstm_clarify3',
+    # ],
+    'splits' : ['validation'],
+    # 'seeds' : ["1", "2", "3", "4", "5"],
+    'clarification_num_lines': ["10", "20", "30", "40", "50"],
+    'importance_detectors' : [
+        "LSTM", 
+        "GT",
+        "ALL"
+    ],
+    'mistranscript_detectors' : [
+        "RF", 
+        "GT",
+        "ALL"
+    ],
+    'versions' : [
+        # '3', 
+        '4'
+    ]
+}
 
-transcript_files = [
-    # 'whisper_tiny_diarized_transcript',
-    # 'whisper_tiny_diarized_transcript_random_clarify',
-    # 'whisper_tiny_diarized_transcript_llm-orig-ctx_clarify',
-    # 'whisper_tiny_diarized_transcript_llm-gt-ctx_clarify',
-    # 'whisper_tiny_diarized_transcript_llm-orig-ctx_clarify_sample2',
-    # 'whisper_tiny_diarized_transcript_llm-gt-ctx_clarify_sample2',
-    # 'qwen_transcript',
-    # 'tiny_transcript',
-    # 'large_transcript',
-    # 'whisper-large-v3_transcript',
-    # 'whisper-tiny_transcript',
-    # 'parsed_diarized_gt',
-    # 'custom_transcript_gt_segments',
-    # 'custom_transcript_gt_segments_gt_clarify',
-    # 'custom_transcript_gt_segments_random_clarify',
-    # 'custom_transcript_gt_segments_rf_clarify',
-    # 'custom_transcript_gt_segments_clarify_only_importance',
-    # 'custom_transcript_gt_segments_gt_clarify2',
-    'custom_transcript_gt_segments_noise',
-]
-question_files = ['parsed_diarized_gt']
-MODEL_TO_USE = 'gpt-4o-mini'
-# MODEL_TO_USE = 'gpt-5.4-mini'
+MODEL_TO_USE = 'gpt-4o-mini' #'gpt-5.4-mini'
 
+keys = ARGUMENTS.keys()
+values = ARGUMENTS.values()
 
-# for q in question_files:
-#     command = f"sbatch -t 300 cpu_job.sh --scripts quiz_pipeline.question_generator --question_file {q} --do_all_meetings --model_to_use gpt-5.4-mini"
-#     os.system(command)
+# 2. Compute the Cartesian product and rebuild dictionaries
+combinations = [dict(zip(keys, v)) for v in product(*values)]
 
-# for t in transcript_files:
-#     for q in question_files:
-#         command = f"sbatch -t 300 cpu_job.sh --scripts quiz_pipeline.question_answerer quiz_pipeline.question_scorer --transcript_file {t} --do_all_meetings --question_file {q} --model_to_use gpt-5.4-mini"
-#         os.system(command)
+for arg in combinations:
 
-# for t in transcript_files:
-#     for q in question_files:
-#         command = f"sbatch -t 300 cpu_job.sh --scripts quiz_pipeline.question_scorer --transcript_file {t} --do_all_meetings --question_file {q} --model_to_use gpt-5.4-mini"
-#         os.system(command)
+    split = arg['splits']
+    clarification_num_line = arg['clarification_num_lines']
+    importance_detector = arg['importance_detectors']
+    mistranscript_detector = arg['mistranscript_detectors']
+    version = arg['versions']
 
-for t in transcript_files:
-    for q in question_files:
-        # command = f"sbatch -t 30 -o quiz_{t}.out -e quiz_{t}.out cpu_job.sh \
-        #     --scripts quiz.question_answerer quiz.question_scorer \
-        #     --transcript_file {t} \
-        #     --do_all_meetings \
-        #     --question_file {q} \
-        #     --model_to_use {MODEL_TO_USE}"
-        
-        # command = f"sbatch -t 30 -o quiz_{t}.out -e quiz_{t}.out cpu_job.sh \
-        #     --scripts quiz.question_answerer quiz.question_scorer \
-        #     --transcript_file {t} \
-        #     --question_file {q} \
-        #     --do_all_meetings \
-        #     --model_to_use {MODEL_TO_USE}"
-        # os.system(command)
+    transcript_file = f"custom_transcript_gt_segments_{mistranscript_detector.lower()}_{importance_detector.lower()}_{clarification_num_line}_clarify{version}"
 
-        # Define the arguments clearly as a list
-        command_args = [
-            "sbatch",
-            "-t", "60",
-            "-o", f"quiz_{t}.out",
-            "-e", f"quiz_{t}.out",
-            "cpu_job.sh",
-            "--scripts", "quiz.question_answerer", "quiz.question_scorer",
-            "--transcript_file", t,
-            "--question_file", q,
-            "--do_all_meetings",
-            "--model_to_use", MODEL_TO_USE
-        ]
+    command_args = [
+        "sbatch",
+        "-t", "60",
+        "-o", f"quiz_{transcript_file}_{split}.out",
+        "-e", f"quiz_{transcript_file}_{split}.out",
+        "cpu_job.sh",
+        "--scripts", f"clarifications.pipelinev{version}", "quiz.question_answerer", "quiz.question_scorer",
+        "--ami_path", f"./shared/datasets/amicorpus/{split}",
+        "--num_lines", clarification_num_line,
+        "--mistranscription-detector", mistranscript_detector,
+        "--importance-detector", importance_detector,
+        "--transcript_file", transcript_file,
+        "--question_file", "parsed_diarized_gt",
+        "--do_all_meetings",
+        "--model_to_use", MODEL_TO_USE
+    ]
 
-        # Run the command
-        subprocess.run(command_args, check=False)
+    # Run the command
+    subprocess.run(command_args, check=False)
 

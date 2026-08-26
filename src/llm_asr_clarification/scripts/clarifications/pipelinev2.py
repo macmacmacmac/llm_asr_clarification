@@ -202,12 +202,14 @@ def run(args_list=None):
                 logger.info(f"This detector predicted: {sum(preds_bool_mask)} mistranscribed lines out of {num_lines} lines")
 
                 mistranscribed_lines_idxs = np.arange(num_lines)[preds_bool_mask]
+
+                ### ==========IMPORTANCE DETECTION VIA GROUND-TRUTH AND MISTRANSCRIPTION DETECTION METHOD
                 imp_line_idxs = get_common_segments(mistranscribed_lines_idxs, gold_idxs)
 
-                ### ONLY IMPORTANCE DETECTION
+                ### ==========ONLY IMPORTANCE DETECTION UPPERBOUND NO MISTRANSCRIPTION DETECTION METHOD
                 # imp_line_idxs = gold_idxs
 
-                ### RANDOM IMPORTANCE DETECTION METHOD
+                ### ==========RANDOM BASELINE CHOOSING AMONGST MISTRANSCRIPTION DETECTION W/O IMPORTANCE METHOD
                 # Select 20 random lines out of the mistranscribed ones
                 # imp_line_idxs = np.random.choice(
                 #     mistranscribed_lines_idxs, 

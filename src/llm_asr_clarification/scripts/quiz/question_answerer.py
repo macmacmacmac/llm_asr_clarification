@@ -99,9 +99,11 @@ def run(args_list=None):
         
         # In case question gen failed earlier
         try:
-            # Read question
-            with open(question_path, "r", encoding="utf-8") as f:
-                question_answers = f.read()
+            # Read question safely with a lock
+            lock = FileLock(f"{question_path}.lock")
+            with lock:
+                with open(question_path, "r", encoding="utf-8") as f:
+                    question_answers = f.read()
         except Exception as e:
             logger.error(f"Something failed, couldnt read question file: {e}")
             continue 
@@ -163,17 +165,21 @@ def run(args_list=None):
 
             # logger.info(f"raw answers: {answers}")
 
-            # Set new answers
-            for qc, a in zip(question_answers, answers):
-                if args.baseline_prompting:
-                    qc["answer_using_baseline_prompting"] = a
-                else:                
-                    qc[f"answer_using_{args.transcript_file}"] = a
-            
             lock = FileLock(f"{question_path}.lock")
             with lock:
+                # Re-read to get latest state from any concurrent jobs
+                with open(question_path, "r", encoding="utf-8") as f:
+                    latest_question_answers = json.loads(f.read())
+                
+                # Set new answers on the latest state
+                for qc, a in zip(latest_question_answers, answers):
+                    if args.baseline_prompting:
+                        qc["answer_using_baseline_prompting"] = a
+                    else:                
+                        qc[f"answer_using_{args.transcript_file}"] = a
+
                 with open(question_path, "w", encoding="utf-8") as f:
-                    f.write(json.dumps(question_answers, indent=4))
+                    f.write(json.dumps(latest_question_answers, indent=4))
 
             logger.info("success! Generated answers")
 

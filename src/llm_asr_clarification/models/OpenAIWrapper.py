@@ -58,7 +58,7 @@ class OpenAIWrapper:
     def prompt_chatgpt(
         self,
         prompt: str,
-        max_retries: int = 5,
+        max_retries: int = 10,
         **kwargs,
     ) -> str:
         defaults = {
