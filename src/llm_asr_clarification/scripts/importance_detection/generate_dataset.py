@@ -8,6 +8,7 @@ import torch
 from sentence_transformers import SentenceTransformer
 from sentence_transformers.util import cos_sim
 from llm_asr_clarification import get_logger
+from torch.nn.utils.rnn import pad_sequence
 import ipdb
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -44,6 +45,7 @@ def run(args_list=None):
     parser.add_argument("--gt-file", type=str, default="parsed_diarized_gt.txt")
     parser.add_argument("--student", action="store_true")
     parser.add_argument("--out-dir", type=str, default="./shared/datasets/importance_detector_student_datasets")
+    parser.add_argument("--ctx-type", type=str, default="WINDOW", help="Can be either WINDOW or FULL")
     parser.add_argument("--window-size", type=int, default=10)
     
     args, _ = parser.parse_known_args(args_list)
@@ -126,31 +128,55 @@ def run(args_list=None):
             # Generate Embeddings for gt and gen segments
             gt_embeddings = SIM_MODEL.encode(clean_gt, convert_to_tensor=True).cpu()
             gen_embeddings = SIM_MODEL.encode(clean_gen, convert_to_tensor=True).cpu()
+
             
             # Create sliding windows for each label
-            for i in range(args.window_size, len(gt_lines)):
-                # Get context: last 10 segments
-                if args.student:
-                    context = gen_embeddings[i - args.window_size: i]
-                    all_contexts.append(gen_lines[i - args.window_size: i])
-                else:
-                    context = gt_embeddings[i - args.window_size: i]
-                    all_contexts.append(gt_lines[i - args.window_size: i])
+            if args.ctx_type == "WINDOW":
+                for i in range(args.window_size, len(gt_lines)):
+                    # Get context: last 10 segments
+                    if args.student:
+                        context_embs = gen_embeddings[i - args.window_size: i]
+                        all_contexts.append(gen_lines[i - args.window_size: i])
+                    else:
+                        context_embs = gt_embeddings[i - args.window_size: i]
+                        all_contexts.append(gt_lines[i - args.window_size: i])
 
 
-                # Get target: current segment
-                target = gen_embeddings[i]
+                    # Get target: current segment
+                    target_embs = gen_embeddings[i]
 
-                # Get label for this segment
-                label = labels[i]
+                    # Get label for this segment
+                    label = labels[i]
 
-                # Append context, target and label into lists
-                all_targets.append(gen_lines[i])
-                all_contexts_embs.append(context)
-                all_targets_embs.append(target)
-                all_labels.append(label)
+                    # Append context, target and label into lists
+                    all_targets.append(gen_lines[i])
+                    all_contexts_embs.append(context_embs)
+                    all_targets_embs.append(target_embs)
+                    all_labels.append(label)
 
-                ipdb.set_trace()
+            # Else we do full context
+            elif args.ctx_type == "FULL":
+                for i in range(args.window_size, len(gt_lines)):
+                    # Get context: Everything starting from beginning until (excluding) the current i segment
+                    if args.student:
+                        context_embs = gen_embeddings[0: i]
+                        all_contexts.append(gen_lines[0: i])
+                    else:
+                        context_embs = gt_embeddings[0: i]
+                        all_contexts.append(gt_lines[0: i])
+
+
+                    # Get target: current segment
+                    target_embs = gen_embeddings[i]
+
+                    # Get label for this segment
+                    label = labels[i]
+
+                    # Append context, target and label into lists
+                    all_targets.append(gen_lines[i])
+                    all_contexts_embs.append(context_embs)
+                    all_targets_embs.append(target_embs)
+                    all_labels.append(label)
 
 
     # If no context was found, exit the script
@@ -160,16 +186,27 @@ def run(args_list=None):
 
     # Stack all context, targets and labels into Torch tensors
     logger.info("Stacking tensors...")
-    X_context_embs = torch.stack(all_contexts_embs)
-    X_target_embs = torch.stack(all_targets_embs)
-    Y_labels = torch.stack(all_labels)
+    if args.ctx_type == "WINDOW":
+        X_context_embs = torch.stack(all_contexts_embs)
+        X_target_embs = torch.stack(all_targets_embs)
+        
 
+    elif args.ctx_type == "FULL":
+        # TODO: Setting to Dummy Tensors for now for LLM based training (as they don't rely on these embeddings)
+        # However, for LSTM training, we need to figure out how to do this with padding and without getting the script 
+        # Killed by OOM error because of exceeding RAM
+        X_context_embs = torch.zeros(1, 1)
+        X_target_embs = torch.zeros(1, 1)
+
+    Y_labels = torch.stack(all_labels)
 
     # Log the shape of all tensors
     logger.info(f"Dataset shape: Contexts: {X_context_embs.shape}, Targets: {X_target_embs.shape}, Labels: {Y_labels.shape}")
 
     # Save the tensors
-    out_file = OUT_DIR / f"{DATASET_FILE_NAME}.pt"
+    out_file = OUT_DIR / f"{args.ctx_type.lower()}_ctx" / f"{DATASET_FILE_NAME}.pt"
+    os.makedirs(out_file.parent, exist_ok=True)
+
     dataset_dict = {
         "context_embs": X_context_embs,
         "target_embs": X_target_embs,
