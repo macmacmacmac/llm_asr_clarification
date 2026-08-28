@@ -57,7 +57,6 @@ def run(args_list=None):
     parser.add_argument("--model-to-use", type=str, default="Qwen/Qwen3-32B")
     parser.add_argument("--ami-path", type=str, default="./shared/datasets/amicorpus/train")
     parser.add_argument("--transcript-file", type=str, default="parsed_diarized_gt")
-    parser.add_argument("--question-file", type=str, default="parsed_diarized_gt")
     parser.add_argument("--do-all-meetings", action="store_true")
     parser.add_argument("--meeting-name", type=str, default="ES2005d")
     parser.add_argument("--baseline-prompting", action="store_true")
@@ -98,122 +97,123 @@ def run(args_list=None):
         tensor_parallel_size=args.tensor_parallel_size,
     )
     logger.info("Model loaded successfully")
-
-    # Configure sampling with guided JSON
-    json_schema = json.dumps(ScoreResponse.model_json_schema())
-    sampling_params = SamplingParams(
-        temperature=0.0,
-        max_tokens=64,
-        structured_outputs=StructuredOutputsParams(json=json_schema),
-    )
-
-    # Determine directories of meetings
-    if args.do_all_meetings:
-        meeting_paths = [entry.path for entry in os.scandir(args.ami_path)]
-    else:
-        meeting_paths = [f"{args.ami_path}/{args.meeting_name}"]
-
-    # PASS 1: Accumulate all requests
-    all_global_messages = []
-    request_metadata = []
-
-    for meeting_path in tqdm(meeting_paths, desc="Preparing prompts"):
-        meeting_name = meeting_path.split("/")[-1]
-
-        # SKIP EN2009d (Outlier Context Length)
-        # Reason: Qwen3-32B-FP8 has a native max_position_embeddings of 40960. EN2009d has ~41,000 tokens.
-        # While vLLM can be forced to override this limit in Python, the underlying Triton/C++ GPU kernels 
-        # hardcode the 40960 boundary and will throw an assertion crash (index out of bounds).
-        # We skip it to ensure the pipeline succeeds for the other 135 meetings.
-        if meeting_name == "EN2009d":
-            logger.info(f"Skipping {meeting_name} due to excessive context length (>40960).")
-            continue
-
-        # Fetch the quiz
-        quiz_path = os.path.join(meeting_path, "quiz", "vllm_quiz.json")
-
-        # Read quiz safely with a lock
-        try:
-            lock = FileLock(f"{quiz_path}.lock")
-            with lock:
-                with open(quiz_path, "r", encoding="utf-8") as f:
-                    quiz = json.loads(f.read())
-        except Exception as e:
-            logger.error(f"Something failed, couldn't read quiz file: {e}")
-            continue
-
-        # Determine Answer and Score fields based on baseline vs regular prompting
-        if args.baseline_prompting:
-            answer_field = "answer_using_baseline_prompting"
-        else:
-            answer_field = f"answer_using_{args.transcript_file}"
-
-        # Build all message lists for this meeting (one per question)
-        for q_idx, q in enumerate(quiz):
-            all_global_messages.append([
-                {"role": "system", "content": VLLM_SCORER_SYSTEM_PROMPT},
-                {"role": "user", "content": VLLM_SCORER_USER_PROMPT.format(
-                    question=q["question"],
-                    correct_answer=q["correct_answer"],
-                    predicted_answer=q[answer_field],
-                )},
-            ])
-            request_metadata.append({
-                "meeting_name": meeting_name,
-                "quiz_path": quiz_path,
-                "q_idx": q_idx
-            })
-
-    # PASS 2: Batch Inference
-    logger.info(f"Sending {len(all_global_messages)} total questions to vLLM in a single batch...")
     try:
-        global_outputs = llm.chat(
-            messages=all_global_messages,
-            sampling_params=sampling_params,
-            chat_template_kwargs={"enable_thinking": False},
+
+        # Configure sampling with guided JSON
+        json_schema = json.dumps(ScoreResponse.model_json_schema())
+        sampling_params = SamplingParams(
+            temperature=0.0,
+            max_tokens=64,
+            structured_outputs=StructuredOutputsParams(json=json_schema),
         )
-    except Exception as e:
-        logger.error(f"vLLM global inference failed: {e}")
-        return
 
-    # PASS 3: Write back to disk
-    outputs_by_quiz = defaultdict(list)
+        # Determine directories of meetings
+        if args.do_all_meetings:
+            meeting_paths = [entry.path for entry in os.scandir(args.ami_path)]
+        else:
+            meeting_paths = [f"{args.ami_path}/{args.meeting_name}"]
 
-    # Group results by meeting
-    for meta, output in zip(request_metadata, global_outputs):
+        # PASS 1: Accumulate all requests
+        all_global_messages = []
+        request_metadata = []
+
+        for meeting_path in tqdm(meeting_paths, desc="Preparing prompts"):
+            meeting_name = meeting_path.split("/")[-1]
+
+            # SKIP EN2009d (Outlier Context Length)
+            # Reason: Qwen3-32B-FP8 has a native max_position_embeddings of 40960. EN2009d has ~41,000 tokens.
+            # While vLLM can be forced to override this limit in Python, the underlying Triton/C++ GPU kernels 
+            # hardcode the 40960 boundary and will throw an assertion crash (index out of bounds).
+            # We skip it to ensure the pipeline succeeds for the other 135 meetings.
+            if meeting_name == "EN2009d":
+                logger.info(f"Skipping {meeting_name} due to excessive context length (>40960).")
+                continue
+
+            # Fetch the quiz
+            quiz_path = os.path.join(meeting_path, "quiz", "vllm_quiz.json")
+
+            # Read quiz safely with a lock
+            try:
+                lock = FileLock(f"{quiz_path}.lock")
+                with lock:
+                    with open(quiz_path, "r", encoding="utf-8") as f:
+                        quiz = json.loads(f.read())
+            except Exception as e:
+                logger.error(f"Something failed, couldn't read quiz file: {e}")
+                continue
+
+            # Determine Answer and Score fields based on baseline vs regular prompting
+            if args.baseline_prompting:
+                answer_field = "answer_using_baseline_prompting"
+            else:
+                answer_field = f"answer_using_{args.transcript_file}"
+
+            # Build all message lists for this meeting (one per question)
+            for q_idx, q in enumerate(quiz):
+                all_global_messages.append([
+                    {"role": "system", "content": VLLM_SCORER_SYSTEM_PROMPT},
+                    {"role": "user", "content": VLLM_SCORER_USER_PROMPT.format(
+                        question=q["question"],
+                        correct_answer=q["correct_answer"],
+                        predicted_answer=q[answer_field],
+                    )},
+                ])
+                request_metadata.append({
+                    "meeting_name": meeting_name,
+                    "quiz_path": quiz_path,
+                    "q_idx": q_idx
+                })
+
+        # PASS 2: Batch Inference
+        logger.info(f"Sending {len(all_global_messages)} total questions to vLLM in a single batch...")
         try:
-            result = json.loads(output.outputs[0].text)
-            score = result["score"]
-        except Exception:
-            logger.error(
-                f"Could not parse response as JSON for {meta['meeting_name']}. Defaulting to 0.\n"
-                f"Response: {output.outputs[0].text}"
+            global_outputs = llm.chat(
+                messages=all_global_messages,
+                sampling_params=sampling_params,
+                chat_template_kwargs={"enable_thinking": False},
             )
-            score = 0
-        outputs_by_quiz[meta["quiz_path"]].append((meta["q_idx"], score))
-
-    if args.baseline_prompting:
-        score_field = "score_using_baseline_prompting"
-    else:
-        score_field = f"score_using_{args.transcript_file}"
-
-    logger.info(f"Writing scores back to disk for {len(outputs_by_quiz)} meetings...")
-    for quiz_path, results in tqdm(outputs_by_quiz.items(), desc="Writing results"):
-        try:
-            lock = FileLock(f"{quiz_path}.lock")
-            with lock:
-                with open(quiz_path, "r", encoding="utf-8") as f:
-                    latest_quiz = json.loads(f.read())
-                for q_idx, s in results:
-                    latest_quiz[q_idx][score_field] = s
-                with open(quiz_path, "w", encoding="utf-8") as f:
-                    f.write(json.dumps(latest_quiz, indent=4))
         except Exception as e:
-            logger.error(f"Failed to write scores for {quiz_path}: {e}")
+            logger.error(f"vLLM global inference failed: {e}")
+            return
+
+        # PASS 3: Write back to disk
+        outputs_by_quiz = defaultdict(list)
+
+        # Group results by meeting
+        for meta, output in zip(request_metadata, global_outputs):
+            try:
+                result = json.loads(output.outputs[0].text)
+                score = result["score"]
+            except Exception:
+                logger.error(
+                    f"Could not parse response as JSON for {meta['meeting_name']}. Defaulting to 0.\n"
+                    f"Response: {output.outputs[0].text}"
+                )
+                score = 0
+            outputs_by_quiz[meta["quiz_path"]].append((meta["q_idx"], score))
+
+        if args.baseline_prompting:
+            score_field = "score_using_baseline_prompting"
+        else:
+            score_field = f"score_using_{args.transcript_file}"
+
+        logger.info(f"Writing scores back to disk for {len(outputs_by_quiz)} meetings...")
+        for quiz_path, results in tqdm(outputs_by_quiz.items(), desc="Writing results"):
+            try:
+                lock = FileLock(f"{quiz_path}.lock")
+                with lock:
+                    with open(quiz_path, "r", encoding="utf-8") as f:
+                        latest_quiz = json.loads(f.read())
+                    for q_idx, s in results:
+                        latest_quiz[q_idx][score_field] = s
+                    with open(quiz_path, "w", encoding="utf-8") as f:
+                        f.write(json.dumps(latest_quiz, indent=4))
+            except Exception as e:
+                logger.error(f"Failed to write scores for {quiz_path}: {e}")
 
     # Explicit GPU cleanup so another script can chain after this
-    logger.info("Cleaning up GPU memory...")
-    del llm
-    import torch
-    torch.cuda.empty_cache()
-    logger.info("GPU memory freed")
+    finally:
+        logger.info("Cleaning up GPU memory...")
+        del llm
+        torch.cuda.empty_cache()
+        logger.info("GPU memory freed")
