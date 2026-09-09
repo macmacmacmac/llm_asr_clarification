@@ -8,8 +8,7 @@ from filelock import FileLock
 from collections import defaultdict
 from pydantic import BaseModel
 from typing import Literal
-import asyncio
-from openai import AsyncOpenAI
+from openai import OpenAI
 
 # ── Pydantic schema for structured output ──────────────────────────────────────
 class ScoreResponse(BaseModel):
@@ -36,30 +35,34 @@ Predicted Answer: {predicted_answer}
 Output JSON Score:
 """
 
-async def process_all_requests(messages_list, json_schema_dict, model_name):
-    client = AsyncOpenAI(
+def process_all_requests(messages_list, json_schema_dict, model_name):
+    client = OpenAI(
         api_key="EMPTY", 
         base_url="http://localhost:8000/v1"
     )
     
-    async def fetch(msgs):
-        return await client.chat.completions.create(
-            model=model_name,
-            messages=msgs,
-            temperature=0.0,
-            seed=47,
-            max_tokens=64,
-            response_format={
-                "type": "json_schema", 
-                "json_schema": {
-                    "name": "ScoreResponse", 
-                    "schema": json_schema_dict
+    results = []
+    for msgs in tqdm(messages_list, desc="API Requests"):
+        try:
+            res = client.chat.completions.create(
+                model=model_name,
+                messages=msgs,
+                temperature=0.0,
+                seed=47,
+                max_tokens=64,
+                response_format={
+                    "type": "json_schema", 
+                    "json_schema": {
+                        "name": "ScoreResponse", 
+                        "schema": json_schema_dict
+                    }
                 }
-            }
-        )
-
-    tasks = [fetch(msgs) for msgs in messages_list]
-    return await asyncio.gather(*tasks, return_exceptions=True)
+            )
+            results.append(res)
+        except Exception as e:
+            results.append(e)
+            
+    return results
 
 
 # Driver Code
@@ -74,10 +77,6 @@ def run(args_list=None):
     parser.add_argument("--do-all-meetings", action="store_true")
     parser.add_argument("--meeting-name", type=str, default="ES2005d")
     parser.add_argument("--baseline-prompting", action="store_true")
-    # Kept for compatibility
-    parser.add_argument("--gpu-memory-utilization", type=float, default=0.90)
-    parser.add_argument("--max-model-len", type=int, default=4096)
-    parser.add_argument("--tensor-parallel-size", type=int, default=1)
 
     args, _ = parser.parse_known_args(args_list)
 
@@ -146,9 +145,7 @@ def run(args_list=None):
     # PASS 2: Batch Inference via local API
     logger.info(f"Sending {len(all_global_messages)} total questions to vLLM local API in a single batch...")
     try:
-        global_outputs = asyncio.run(
-            process_all_requests(all_global_messages, ScoreResponse.model_json_schema(), args.model_to_use)
-        )
+        global_outputs = process_all_requests(all_global_messages, ScoreResponse.model_json_schema(), args.model_to_use)
     except Exception as e:
         logger.error(f"vLLM API global inference failed: {e}")
         return

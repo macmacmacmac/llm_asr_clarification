@@ -7,8 +7,7 @@ import json
 from filelock import FileLock
 from collections import defaultdict
 from pydantic import BaseModel
-import asyncio
-from openai import AsyncOpenAI
+from openai import OpenAI
 
 # ── Pydantic schema for structured output ──────────────────────────────────────
 class AnswerResponse(BaseModel):
@@ -52,31 +51,35 @@ VLLM_BASELINE_ANSWER_USER_PROMPT = """## Meeting Name:
 Output JSON Answer:
 """
 
-async def process_all_requests(messages_list, json_schema_dict, model_name):
-    client = AsyncOpenAI(
+def process_all_requests(messages_list, json_schema_dict, model_name):
+    client = OpenAI(
         api_key="EMPTY", 
         base_url="http://localhost:8000/v1"
     )
     
-    async def fetch(msgs):
-        return await client.chat.completions.create(
-            model=model_name,
-            messages=msgs,
-            temperature=0.0,
-            seed=47,
-            max_tokens=4096,
-            response_format={
-                "type": "json_schema", 
-                "json_schema": {
-                    "name": "AnswerResponse", 
-                    "schema": json_schema_dict,
-                    "strict": True
+    results = []
+    for msgs in tqdm(messages_list, desc="API Requests"):
+        try:
+            res = client.chat.completions.create(
+                model=model_name,
+                messages=msgs,
+                temperature=0.0,
+                seed=47,
+                max_tokens=4096,
+                response_format={
+                    "type": "json_schema", 
+                    "json_schema": {
+                        "name": "AnswerResponse", 
+                        "schema": json_schema_dict,
+                        "strict": True
+                    }
                 }
-            }
-        )
-
-    tasks = [fetch(msgs) for msgs in messages_list]
-    return await asyncio.gather(*tasks, return_exceptions=True)
+            )
+            results.append(res)
+        except Exception as e:
+            results.append(e)
+            
+    return results
 
 
 # Driver Code
@@ -170,9 +173,7 @@ def run(args_list=None):
     # PASS 2: Batch Inference via local API
     logger.info(f"Sending {len(all_global_messages)} total questions to vLLM local API in a single batch...")
     try:
-        global_outputs = asyncio.run(
-            process_all_requests(all_global_messages, AnswerResponse.model_json_schema(), args.model_to_use)
-        )
+        global_outputs = process_all_requests(all_global_messages, AnswerResponse.model_json_schema(), args.model_to_use)
     except Exception as e:
         logger.error(f"vLLM API global inference failed: {e}")
         return
