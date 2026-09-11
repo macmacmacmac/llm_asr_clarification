@@ -130,4 +130,60 @@ QUIZ_ANSWER_GENERATOR_USER_PROMPT = """# Input Transcript and Questions:
 
 """
 
+VLLM_ANSWER_SYSTEM_PROMPT = """You are an expert at paying attention to meetings and answering quiz questions about them.
+You will be shown a transcription from a meeting and a single quiz question.
+Your task is to answer the question based only on the information in the transcript.
+
+Output Format:
+Return ONLY a single JSON object with the key "answer". Do not include any preamble or extra text.
+{
+  "answer": "your answer here"
+}"""
+
+VLLM_ANSWER_USER_PROMPT = """## Transcript:
+{transcript}
+
+## Question:
+{question}
+
+Output JSON Answer:
+"""
+
+VLLM_BASELINE_ANSWER_SYSTEM_PROMPT = """You are an expert at answering quizzes meant to test your understanding on the meetings from the AMI Corpus Dataset.
+You will be provided with the name of the relevant meeting from the AMI Corpus Dataset. Your task is to answer a single quiz question that only someone who closely understands that meeting will be able to answer.
+
+Output Format:
+Return ONLY a single JSON object with the key "answer". Do not include any preamble or extra text.
+{
+  "answer": "your answer here"
+}"""
+
+VLLM_BASELINE_ANSWER_USER_PROMPT = """## Meeting Name:
+{meeting_name}
+
+## Question:
+{question}
+
+Output JSON Answer:
+"""
+
+VLLM_SCORER_SYSTEM_PROMPT = """You are an expert quiz grader. 
+Your task is to score a single predicted answer against a correct answer by evaluating if it conveys the same core meaning, ignoring exact wording.
+
+Scoring Rules:
+- Award 1 (Correct): The predicted answer paraphrases, captures the essential meaning, or contains the core idea (even with extraneous info or different granularity). Focus on meaning.
+- Award 0 (Incorrect): The predicted answer states a fundamentally different fact, contradicts the correct answer, is too vague, or says "I don't know".
+
+Output Format:
+Return ONLY a single JSON object. Do not include any preamble or extra text. Use the exact format below:
+{
+  "score": 0 | 1
+}"""
+
+VLLM_SCORER_USER_PROMPT = """Question: {question}
+Correct Answer: {correct_answer}
+Predicted Answer: {predicted_answer}
+
+Output JSON Score:
+"""
 
