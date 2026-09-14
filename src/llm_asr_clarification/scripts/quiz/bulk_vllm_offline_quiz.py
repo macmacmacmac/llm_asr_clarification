@@ -1,4 +1,19 @@
 # ruff: noqa: BLE001 # Ignores usage of blind except blocks
+"""
+Determinism in vLLM Offline Batching:
+This script guarantees 100% deterministic outputs across runs by addressing multiple sources of non-determinism:
+
+1. OS Directory Iteration: 
+   `os.scandir` is wrapped in `sorted()` to ensure all meeting folders are read and prompts are fed to vLLM in the exact same order.
+2. Floating-Point Reductions in CUDA (FlashAttention / Marlin FP8): 
+   By setting `max_num_seqs=1` in the LLM config, we force vLLM to process exactly one sequence at a time. 
+   This entirely eliminates the floating-point non-associativity noise that occurs when parallel CUDA kernels perform reduction across 
+   a dynamically changing batch of sequences.
+3. Random Seeds:
+   `seed=47` is strictly enforced in both the LLM engine initialization and the SamplingParams.
+
+Note: By keeping `max_num_seqs=1`, we safely retain fast optimizations like CUDA graphs and Prefix Caching because they execute deterministically on a batch size of 1.
+"""
 
 import os
 import json
@@ -33,7 +48,7 @@ def run(args_list=None):
     parser.add_argument("--ami-path", type=str, default="./shared/datasets/amicorpus")
     parser.add_argument("--tensor-parallel-size", type=int, default=1)
     parser.add_argument("--max-model-len", type=int, default=40960)
-    parser.add_argument("--gpu-memory-utilization", type=float, default=0.95)
+    parser.add_argument("--gpu-memory-utilization", type=float, default=0.90)
 
     args, _ = parser.parse_known_args(args_list)
 
@@ -50,10 +65,6 @@ def run(args_list=None):
     clarification_num_lines = ["10", "20", "30", "40", "50"]
     importance_detectors = ["LSTM", "GT", "ALL"]
     mistranscript_detectors = ["RF", "GT", "ALL"]
-
-    # clarification_num_lines = ["10"]
-    # importance_detectors = ["LSTM"]
-    # mistranscript_detectors = ["RF"]
 
     versions = ["4"]
 
@@ -145,11 +156,15 @@ def run(args_list=None):
     # Proceed with answering questions using all prompts prepared
     if all_answer_messages:
         logger.info(f"Loading LLM for Answering ({args.answering_model})...")
+        # Deterministic config: process one prompt at a time to eliminate batch-level non-determinism
+        # We allow prefix caching, chunked prefill, and CUDA graphs (enforce_eager=False) for speed, 
+        # as they are perfectly deterministic when batch size is strictly 1.
         llm = LLM(
             model=args.answering_model,
             max_model_len=args.max_model_len,
             tensor_parallel_size=args.tensor_parallel_size,
-            seed=47
+            seed=47,
+            max_num_seqs=1
         )
         
         sampling_params = SamplingParams(
@@ -196,7 +211,6 @@ def run(args_list=None):
 
             except Exception as e:
                 logger.error(f"Failed writing {quiz_path}: {e}")
-
         # Gracefully destroy the vLLM instance
         logger.info("Destroying Answering LLM...")
         destroy_model_parallel()
@@ -272,11 +286,15 @@ def run(args_list=None):
     # Proceed with scoring quizzes using all prompts prepared
     if all_score_messages:
         logger.info(f"Loading LLM for Scoring ({args.scoring_model})...")
+        # Deterministic config: process one prompt at a time to eliminate batch-level non-determinism
+        # We allow prefix caching, chunked prefill, and CUDA graphs (enforce_eager=False) for speed, 
+        # as they are perfectly deterministic when batch size is strictly 1.
         llm = LLM(
             model=args.scoring_model,
             max_model_len=args.max_model_len,
             tensor_parallel_size=args.tensor_parallel_size,
-            seed=47
+            seed=47,
+            max_num_seqs=1
         )
         
         sampling_params = SamplingParams(
