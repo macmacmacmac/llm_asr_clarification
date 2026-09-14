@@ -35,8 +35,18 @@ from llm_asr_clarification.constants.quiz_prompts import (
     VLLM_ANSWER_SYSTEM_PROMPT, VLLM_ANSWER_USER_PROMPT,
     VLLM_SCORER_SYSTEM_PROMPT, VLLM_SCORER_USER_PROMPT
 )
-from llm_asr_clarification.scripts.archived.vllm_api_answerer import AnswerResponse
-from llm_asr_clarification.scripts.archived.vllm_api_scorer import ScoreResponse
+from pydantic import BaseModel
+from typing import Literal
+
+
+# Pydantic Schemas for structured outputs
+class AnswerResponse(BaseModel):
+    answer: str
+
+class ScoreResponse(BaseModel):
+    score: Literal[0, 1]
+
+
 
 def run(args_list=None):
     exp_name = os.path.basename(__file__)
