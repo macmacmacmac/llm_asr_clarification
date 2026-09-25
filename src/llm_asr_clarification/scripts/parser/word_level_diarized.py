@@ -12,7 +12,6 @@ def run(args_list=None):
     
     # Perform CLI Argument Parsing=================================================
     parser = argparse.ArgumentParser()
-    parser.add_argument("--msg", type=str, default="example")
     parser.add_argument("--ami_path", type=str, default="./shared/datasets/amicorpus")
 
     args, _ = parser.parse_known_args(args_list)
@@ -139,8 +138,8 @@ def run(args_list=None):
                     text += " " + token["text"]
 
             if text:
-                start_time = int(segment_tokens[0]["start"])
-                end_time = int(segment_tokens[-1]["end"])
+                start_time = round(segment_tokens[0]["start"], 2)
+                end_time = round(segment_tokens[-1]["end"], 2)
                 segments.append((speaker, text, start_time, end_time))
                 # segments.append((speaker, text))
 

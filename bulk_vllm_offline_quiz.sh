@@ -7,7 +7,8 @@
 #SBATCH -p short
 #SBATCH -t 1-00:00:00
 #SBATCH --gres=gpu:1
-#SBATCH -C A100-80G
+##SBATCH -C A100
+#SBATCH -C L40S
 #SBATCH -o offline_vllm.out
 #SBATCH -e offline_vllm.out
 
@@ -26,7 +27,7 @@ source .vllm_venv/bin/activate
 echo "Starting vLLM Offline Bulk Pipeline..."
 
 python -u -m run_scripts --scripts quiz.bulk_vllm_offline_quiz \
-    --answering-model "Qwen/Qwen3-32B-FP8" \
-    --scoring-model "Qwen/Qwen3-32B-FP8"
+    --answering-model "Qwen/Qwen3-4B" \
+    --scoring-model "Qwen/Qwen3-8B"
 
 echo "Pipeline completed."

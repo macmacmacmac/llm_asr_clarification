@@ -6,8 +6,6 @@ from tqdm import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
 import ipdb
 import random
-from typing import Tuple, List
-import numpy as np
 import re
 import json
 
@@ -17,7 +15,7 @@ def run(args_list=None):
     
     # Perform CLI Argument Parsing
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset-path", type=str, default="./shared/datasets/amicorpus/validation")
+    parser.add_argument("--dataset-path", type=str, default="./shared/datasets/amicorpus/train")
     parser.add_argument("--transcript-file", type=str, default="custom_transcript_gt_segments.txt")
 
     parser.add_argument("--seed", type=int, default=47)
@@ -70,7 +68,7 @@ def run(args_list=None):
             gt_lines = gt_content.split("\n")
 
             # Load the beams artifact
-            beam_results_2_path = meeting_folder / "artifacts" / "beam_results_2.json"
+            beam_results_2_path = meeting_folder / "artifacts" / "beam_results.json"
             with open(beam_results_2_path, "r", encoding="utf-8") as f:
                 beam_results_2 = json.load(f)
 
@@ -85,7 +83,7 @@ def run(args_list=None):
                 words = text_only.split(" ")
                 num_words = len(words)
 
-                numbers = [int(num) for num in re.findall(r'\d+', metadata)]
+                numbers = [float(num) for num in re.findall(r'\d+(?:\.\d+)?', metadata)]
                 len_time = max(numbers) - min(numbers)
                 expected_num_words = len_time//2
 
@@ -99,13 +97,13 @@ def run(args_list=None):
             # ipdb.set_trace()
 
             new_filter_gt = [gt_lines[i] for i in idxs_to_keep]
-            # new_filter_gen = [gen_lines[i] for i in idxs_to_keep]
+            new_filter_gen = [gen_lines[i] for i in idxs_to_keep]
             new_beam_results_2 = [beam_results_2[i] for i in idxs_to_keep]
             # ┌───────────────────────────────────────────────┐
             # │                     SAVE                      │
             # └───────────────────────────────────────────────┘
-            # with open(transcript_path, "w", encoding="utf-8") as f:
-            #     f.write("\n".join(new_filter_gen))
+            with open(transcript_path, "w", encoding="utf-8") as f:
+                f.write("\n".join(new_filter_gen))
                 
             with open(gt_transcript_path, "w", encoding="utf-8") as f:
                 f.write("\n".join(new_filter_gt))
