@@ -67,11 +67,12 @@ def run(args_list=None):
 
     # Perform CLI Argument Parsing
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", type=str, default="Qwen/Qwen3-8B-FP8")
+    parser.add_argument("--model", type=str, default="Qwen/Qwen3-14B-FP8")
     parser.add_argument("--ami-path", type=str, default="./shared/datasets/amicorpus")
     parser.add_argument("--split", type=str, default="train")
     parser.add_argument("--window", type=int, default=1)
     parser.add_argument("--stride", type=int, default=1)
+    parser.add_argument("--which_half", type=str, default="full")
     parser.add_argument("--tensor-parallel-size", type=int, default=1)
     parser.add_argument("--max-model-len", type=int, default=40960)
 
@@ -120,7 +121,7 @@ def run(args_list=None):
     )
 
     gold_labels = {}
-    save_path = f"./shared/datasets/gold_labels/{args.split}_{args.window}w_{args.stride}s.pt"
+    save_path = f"./shared/datasets/gold_labels/{args.split}_{args.model.split("/")[-1]}_{args.window}w_{args.stride}s_{args.which_half}.pt"
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     if os.path.exists(save_path):
         gold_labels = torch.load(save_path)
@@ -133,7 +134,23 @@ def run(args_list=None):
 
     meeting_paths = sorted(entry.path for entry in os.scandir(split_path) if entry.is_dir())
 
-    meeting_paths = [meeting_path for meeting_path in meeting_paths if "TS3005d" in meeting_path]
+    # Filtering meetings 
+    meetings_too_long = [
+        "EN2009d",
+        "EN2001a",
+        "EN2005a",
+        "IN1013",
+        "IN1016",
+        "EN2006a",
+        "TS3006d"
+    ]
+    meeting_paths = [meeting_path for meeting_path in meeting_paths if 'TS3005d' in meeting_path]
+
+    # meeting_paths = [meeting_path for meeting_path in meeting_paths if meeting_path not in meetings_too_long]
+    if args.which_half == "first":
+        meeting_paths = meeting_paths[:len(meeting_paths)//2]
+    elif args.which_half == "second":
+        meeting_paths = meeting_paths[len(meeting_paths)//2:]
     # ipdb.set_trace()
 
     for meeting_path in tqdm(meeting_paths, desc="Processing Meetings"):
@@ -178,20 +195,35 @@ def run(args_list=None):
             logger.warning(f"[{meeting_name}] Quiz is empty!")
             continue
 
-        # 2. Build Transcript Iterations (Cumulative)
-        transcript_versions = ["\n".join(asr_lines)]
-        current_lines = list(asr_lines)
-        replaced_indices_per_iter = [[]]
+        # # 2. Build Transcript Iterations (Cumulative)
+        # transcript_versions = ["\n".join(asr_lines)]
+        # current_lines = list(asr_lines)
+        # replaced_indices_per_iter = [[]]
         
-        for i in range(0, len(asr_lines), args.stride):
-            replaced = []
-            for j in range(i, min(i + args.window, len(asr_lines))):
-                current_lines[j] = gt_lines[j]
-                replaced.append(j)
-            transcript_versions.append("\n".join(current_lines))
-            replaced_indices_per_iter.append(replaced)
+        # for i in range(0, len(asr_lines), args.stride):
+        #     replaced = []
+        #     for j in range(i, min(i + args.window, len(asr_lines))):
+        #         current_lines[j] = gt_lines[j]
+        #         replaced.append(j)
+        #     transcript_versions.append("\n".join(current_lines))
+        #     replaced_indices_per_iter.append(replaced)
 
-        # ipdb.set_trace()
+        # 2. Build Transcript Iterations (Non-Cumulative)
+        base_transcript = "\n".join(asr_lines)
+        transcript_versions = [base_transcript]
+        replaced_indices_per_iter = [[]]
+
+        for i in range(0, len(asr_lines), args.stride):
+            gt_window = gt_lines[i:i+args.stride]
+
+            asr_copy = asr_lines.copy()
+            asr_copy[i:i+args.stride] = gt_window
+            transcript_versions.append("\n".join(asr_copy))
+
+            replaced_idxs = list(range(i, i+args.stride))
+            replaced_indices_per_iter.append(replaced_idxs)
+
+            # ipdb.set_trace()
 
         # 3. Answering Phase
         logger.info(f"[{meeting_name}] Building answer prompts for {len(transcript_versions)} iterations...")
@@ -262,7 +294,8 @@ def run(args_list=None):
         # 5. Compute Importance
         is_important = [False] * len(asr_lines)
         for k in range(1, len(transcript_versions)):
-            if version_scores[k] > version_scores[k-1]:
+            # if version_scores[k] > version_scores[k-1]: # For cumulative transcript versions
+            if version_scores[k] > version_scores[0]: # For non-cumulative transcript versions
                 for idx in replaced_indices_per_iter[k]:
                     is_important[idx] = True
 
