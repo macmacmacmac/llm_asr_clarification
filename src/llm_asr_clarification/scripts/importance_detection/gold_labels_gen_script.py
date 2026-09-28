@@ -67,7 +67,7 @@ def run(args_list=None):
 
     # Perform CLI Argument Parsing
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", type=str, default="Qwen/Qwen3-32B-FP8")
+    parser.add_argument("--model", type=str, default="Qwen/Qwen3-8B-FP8")
     parser.add_argument("--ami-path", type=str, default="./shared/datasets/amicorpus")
     parser.add_argument("--split", type=str, default="train")
     parser.add_argument("--window", type=int, default=1)
@@ -88,18 +88,27 @@ def run(args_list=None):
     logger.info(f"Loading LLM ({args.model})...")
     # We allow prefix caching, chunked prefill, and CUDA graphs (enforce_eager=False) for speed, 
     # as they are perfectly deterministic when batch size is strictly 1.
-    # llm = LLM(
-    #     model=args.model,
-    #     max_model_len=args.max_model_len,
-    #     tensor_parallel_size=args.tensor_parallel_size,
-    #     seed=47,
-    #     #max_num_seqs=1
-    # )
+    #llm = LLM(
+    #    model=args.model,
+    #    max_model_len=args.max_model_len,
+    #    tensor_parallel_size=args.tensor_parallel_size,
+    #    seed=47,
+    #    # gpu_memory_utilization=0.95
+    #    #max_num_seqs=1
+    #)
+    llm = LLM(
+        model=args.model,
+        max_model_len=args.max_model_len,
+        tensor_parallel_size=args.tensor_parallel_size,
+        seed=47,
+        enable_prefix_caching=True,
+        gpu_memory_utilization=0.95,
+    )
     
     answer_sampling_params = SamplingParams(
         temperature=0.0, 
         seed=47, 
-        max_tokens=4096, 
+        max_tokens=512, 
         structured_outputs=StructuredOutputsParams(json=json.dumps(AnswerResponse.model_json_schema()))
     )
     
@@ -124,7 +133,7 @@ def run(args_list=None):
 
     meeting_paths = sorted(entry.path for entry in os.scandir(split_path) if entry.is_dir())
 
-    meeting_paths = [meeting_path for meeting_path in meeting_paths if "TS3006d" in meeting_path]
+    meeting_paths = [meeting_path for meeting_path in meeting_paths if "TS3005d" in meeting_path]
     # ipdb.set_trace()
 
     for meeting_path in tqdm(meeting_paths, desc="Processing Meetings"):
@@ -182,7 +191,7 @@ def run(args_list=None):
             transcript_versions.append("\n".join(current_lines))
             replaced_indices_per_iter.append(replaced)
 
-        ipdb.set_trace()
+        # ipdb.set_trace()
 
         # 3. Answering Phase
         logger.info(f"[{meeting_name}] Building answer prompts for {len(transcript_versions)} iterations...")
