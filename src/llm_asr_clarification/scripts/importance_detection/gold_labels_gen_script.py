@@ -67,7 +67,7 @@ def run(args_list=None):
 
     # Perform CLI Argument Parsing
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", type=str, default="Qwen/Qwen3-14B-FP8")
+    parser.add_argument("--model", type=str, default="Qwen/Qwen3-8B-FP8")
     parser.add_argument("--ami-path", type=str, default="./shared/datasets/amicorpus")
     parser.add_argument("--split", type=str, default="train")
     parser.add_argument("--window", type=int, default=1)
@@ -144,9 +144,9 @@ def run(args_list=None):
         "EN2006a",
         "TS3006d"
     ]
-    meeting_paths = [meeting_path for meeting_path in meeting_paths if 'TS3005d' in meeting_path]
+    # meeting_paths = [meeting_path for meeting_path in meeting_paths if 'TS3005d' in meeting_path]
 
-    # meeting_paths = [meeting_path for meeting_path in meeting_paths if meeting_path not in meetings_too_long]
+    meeting_paths = [meeting_path for meeting_path in meeting_paths if meeting_path not in meetings_too_long]
     if args.which_half == "first":
         meeting_paths = meeting_paths[:len(meeting_paths)//2]
     elif args.which_half == "second":
