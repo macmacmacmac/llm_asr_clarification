@@ -70,9 +70,9 @@ def run(args_list=None):
     parser.add_argument("--model", type=str, default="Qwen/Qwen3-8B-FP8")
     parser.add_argument("--ami-path", type=str, default="./shared/datasets/amicorpus")
     parser.add_argument("--split", type=str, default="train")
-    parser.add_argument("--window", type=int, default=1)
-    parser.add_argument("--stride", type=int, default=1)
-    parser.add_argument("--which_half", type=str, default="full")
+    parser.add_argument("--window", type=int, default=5)
+    parser.add_argument("--stride", type=int, default=5)
+    parser.add_argument("--which-half", type=str, default="full")
     parser.add_argument("--tensor-parallel-size", type=int, default=1)
     parser.add_argument("--max-model-len", type=int, default=40960)
 
@@ -87,16 +87,7 @@ def run(args_list=None):
     logger.info(f"Received the following arguments:\n{received_args_log}")
 
     logger.info(f"Loading LLM ({args.model})...")
-    # We allow prefix caching, chunked prefill, and CUDA graphs (enforce_eager=False) for speed, 
-    # as they are perfectly deterministic when batch size is strictly 1.
-    #llm = LLM(
-    #    model=args.model,
-    #    max_model_len=args.max_model_len,
-    #    tensor_parallel_size=args.tensor_parallel_size,
-    #    seed=47,
-    #    # gpu_memory_utilization=0.95
-    #    #max_num_seqs=1
-    #)
+
     llm = LLM(
         model=args.model,
         max_model_len=args.max_model_len,
@@ -132,8 +123,6 @@ def run(args_list=None):
         logger.error(f"Unable to find folder: {split_path}")
         return
 
-    meeting_paths = sorted(entry.path for entry in os.scandir(split_path) if entry.is_dir())
-
     # Filtering meetings 
     meetings_too_long = [
         "EN2009d",
@@ -144,16 +133,17 @@ def run(args_list=None):
         "EN2006a",
         "TS3006d"
     ]
-    # meeting_paths = [meeting_path for meeting_path in meeting_paths if 'TS3005d' in meeting_path]
 
-    meeting_paths = [meeting_path for meeting_path in meeting_paths if meeting_path not in meetings_too_long]
+    meeting_paths = sorted(entry.path for entry in os.scandir(split_path) if entry.is_dir() and entry.name not in meetings_too_long)
+    # meeting_paths = sorted(entry.path for entry in os.scandir(split_path) if entry.is_dir() and entry.name == "TS3005d")
+
+    # meeting_paths = [meeting_path for meeting_path in meeting_paths if meeting_path not in meetings_too_long]
     if args.which_half == "first":
         meeting_paths = meeting_paths[:len(meeting_paths)//2]
     elif args.which_half == "second":
         meeting_paths = meeting_paths[len(meeting_paths)//2:]
-    # ipdb.set_trace()
 
-    for meeting_path in tqdm(meeting_paths, desc="Processing Meetings"):
+    for meeting_path in tqdm(meeting_paths, desc="Processing Meetings", position=0, leave=True):
         meeting_name = os.path.basename(meeting_path)
         if meeting_name in gold_labels:
             logger.info(f"Skipping {meeting_name}, already processed.")
@@ -214,13 +204,13 @@ def run(args_list=None):
         replaced_indices_per_iter = [[]]
 
         for i in range(0, len(asr_lines), args.stride):
-            gt_window = gt_lines[i:i+args.stride]
+            gt_window = gt_lines[i:i+args.window]
 
             asr_copy = asr_lines.copy()
-            asr_copy[i:i+args.stride] = gt_window
+            asr_copy[i:i+args.window] = gt_window
             transcript_versions.append("\n".join(asr_copy))
 
-            replaced_idxs = list(range(i, i+args.stride))
+            replaced_idxs = list(range(i, min(i + args.window, len(asr_lines))))
             replaced_indices_per_iter.append(replaced_idxs)
 
             # ipdb.set_trace()
