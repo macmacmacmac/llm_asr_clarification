@@ -47,8 +47,8 @@ def run(args_list=None):
 
     # Perform CLI Argument Parsing
     parser = argparse.ArgumentParser(description="Train ImportanceLSTM model")
-    parser.add_argument("--dataset-path", type=str, default="./shared/datasets/importance_detector_student_datasets", help="Path to training .pt file")
-    parser.add_argument("--out-dir", type=str, default="./shared/model_weights/importance_lstm", help="Directory to save model weights")
+    parser.add_argument("--dataset-path", type=str, default="./shared/datasets/gold_datasets/window_5")
+    parser.add_argument("--out-dir", type=str, default="./shared/model_weights/classifier/unfiltered")
     parser.add_argument("--batch-size", type=int, default=64, help="Batch size")
     parser.add_argument("--epochs", type=int, default=10, help="Number of epochs")
     parser.add_argument("--lr", type=float, default=3e-5, help="Learning rate")

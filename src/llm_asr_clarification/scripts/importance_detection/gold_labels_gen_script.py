@@ -1,4 +1,3 @@
-# ruff: noqa: BLE001 # Ignores usage of blind except blocks
 """
     This is to be a script for generating gold labels for importance detection.
     The script works as follow
@@ -95,6 +94,7 @@ def run(args_list=None):
         seed=47,
         enable_prefix_caching=True,
         gpu_memory_utilization=0.95,
+        max_num_seqs = 1
     )
     
     answer_sampling_params = SamplingParams(
@@ -134,8 +134,8 @@ def run(args_list=None):
         "TS3006d"
     ]
 
-    meeting_paths = sorted(entry.path for entry in os.scandir(split_path) if entry.is_dir() and entry.name not in meetings_too_long)
-    # meeting_paths = sorted(entry.path for entry in os.scandir(split_path) if entry.is_dir() and entry.name == "TS3005d")
+    # meeting_paths = sorted(entry.path for entry in os.scandir(split_path) if entry.is_dir() and entry.name not in meetings_too_long)
+    meeting_paths = sorted(entry.path for entry in os.scandir(split_path) if entry.is_dir() and entry.name == "IS1007c")
 
     # meeting_paths = [meeting_path for meeting_path in meeting_paths if meeting_path not in meetings_too_long]
     if args.which_half == "first":
@@ -145,12 +145,9 @@ def run(args_list=None):
 
     for meeting_path in tqdm(meeting_paths, desc="Processing Meetings", position=0, leave=True):
         meeting_name = os.path.basename(meeting_path)
+
         if meeting_name in gold_labels:
             logger.info(f"Skipping {meeting_name}, already processed.")
-            continue
-            
-        if meeting_name == "EN2009d":
-            logger.info("Skipping Meeting EN2009d as its too big for the vLLM model!")
             continue
 
         asr_path = os.path.join(meeting_path, "transcripts", "custom_transcript_gt_segments.txt")
@@ -280,7 +277,9 @@ def run(args_list=None):
             except (json.JSONDecodeError, KeyError, IndexError, AttributeError):
                 score = 0
             version_scores[v_idx] += score
-            
+
+        ipdb.set_trace()
+
         # 5. Compute Importance
         is_important = [False] * len(asr_lines)
         for k in range(1, len(transcript_versions)):
@@ -288,6 +287,8 @@ def run(args_list=None):
             if version_scores[k] > version_scores[0]: # For non-cumulative transcript versions
                 for idx in replaced_indices_per_iter[k]:
                     is_important[idx] = True
+
+        ipdb.set_trace()
 
         # 6. Save
         gold_labels[meeting_name] = is_important
