@@ -59,6 +59,12 @@ def run(args_list=None):
     parser.add_argument("--tensor-parallel-size", type=int, default=1)
     parser.add_argument("--max-model-len", type=int, default=40960)
     parser.add_argument("--gpu-memory-utilization", type=float, default=0.90)
+    parser.add_argument("--splits", type=str, nargs="+", default=["validation"])
+    parser.add_argument("--meetings", type=str, nargs="+", default=None, help="Only process these meetings (default: all in each split)")
+    parser.add_argument("--clarification-num-lines", type=str, nargs="+", default=["10", "20", "30", "40", "50"])
+    parser.add_argument("--importance-detectors", type=str, nargs="+", default=["LSTM", "GT", "ALL"])
+    parser.add_argument("--mistranscript-detectors", type=str, nargs="+", default=["RF", "GT", "ALL"])
+    parser.add_argument("--versions", type=str, nargs="+", default=["4"])
 
     args, _ = parser.parse_known_args(args_list)
 
@@ -71,12 +77,12 @@ def run(args_list=None):
     logger.info(f"Received the following arguments:\n{received_args_log}")
 
     # Configurations
-    splits = ["validation"]
-    clarification_num_lines = ["10", "20", "30", "40", "50"]
-    importance_detectors = ["LSTM", "GT", "ALL"]
-    mistranscript_detectors = ["RF", "GT", "ALL"]
+    splits = args.splits
+    clarification_num_lines = args.clarification_num_lines
+    importance_detectors = args.importance_detectors
+    mistranscript_detectors = args.mistranscript_detectors
 
-    versions = ["4"]
+    versions = args.versions
 
     configs = []
     for split in splits:
@@ -111,7 +117,7 @@ def run(args_list=None):
             logger.warning(f"Unable to find folder: {split_path}")
             continue
             
-        meeting_paths = sorted(entry.path for entry in os.scandir(split_path) if entry.is_dir())
+        meeting_paths = sorted(entry.path for entry in os.scandir(split_path) if entry.is_dir() and (args.meetings is None or entry.name in args.meetings))
         
         for meeting_path in meeting_paths:
             meeting_name = os.path.basename(meeting_path)
@@ -248,7 +254,7 @@ def run(args_list=None):
             logger.warning(f"Unable to find folder: {split_path}")
             continue
             
-        meeting_paths = sorted(entry.path for entry in os.scandir(split_path) if entry.is_dir())
+        meeting_paths = sorted(entry.path for entry in os.scandir(split_path) if entry.is_dir() and (args.meetings is None or entry.name in args.meetings))
         
         for meeting_path in meeting_paths:
             meeting_name = os.path.basename(meeting_path)

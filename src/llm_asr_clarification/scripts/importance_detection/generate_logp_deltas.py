@@ -36,6 +36,14 @@ def run(args_list=None):
     parser.add_argument("--split", type=str, default="train")
     parser.add_argument("--tensor-parallel-size", type=int, default=1)
     parser.add_argument("--max-model-len", type=int, default=40960)
+    parser.add_argument("--meetings", type=str, nargs="+", default=None, help="Explicit meetings to run (default: all in split minus the too-long ones)")
+    parser.add_argument("--num-shards", type=int, default=1, help="Split the meeting list across this many parallel jobs")
+    parser.add_argument("--shard-idx", type=int, default=0)
+    parser.add_argument("--save-path", type=str, default=None, help="Output .pt (default: ./shared/datasets/logp_deltas/<split>_32b.pt, the legacy pilot path)")
+    parser.add_argument("--max-num-batched-tokens", type=int, default=None,
+                        help="Cap tokens per engine step. prompt_logprobs computes full-vocab logits for every scheduled prompt "
+                             "token; >~14k tokens x 152k vocab overflows cuBLAS int32 indexing (CUBLAS_STATUS_INTERNAL_ERROR). "
+                             "8192 is safe. Default: vLLM's default (16384 here).")
 
     args, _ = parser.parse_known_args(args_list)
 
@@ -49,6 +57,9 @@ def run(args_list=None):
 
     logger.info(f"Loading LLM ({args.model})...")
 
+    llm_kwargs = {}
+    if args.max_num_batched_tokens is not None:
+        llm_kwargs["max_num_batched_tokens"] = args.max_num_batched_tokens
     llm = LLM(
         model=args.model,
         max_model_len=args.max_model_len,
@@ -56,6 +67,7 @@ def run(args_list=None):
         seed=47,
         enable_prefix_caching=True,
         gpu_memory_utilization=0.95,
+        **llm_kwargs,
     )
 
     tokenizer = llm.get_tokenizer()
@@ -73,7 +85,7 @@ def run(args_list=None):
 
     logp_deltas = {}
     model_name = args.model.split("/")[-1]
-    save_path = f"./shared/datasets/logp_deltas/{args.split}_32b.pt"
+    save_path = args.save_path or f"./shared/datasets/logp_deltas/{args.split}_32b.pt"
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     if os.path.exists(save_path):
         logp_deltas = torch.load(save_path)
@@ -95,11 +107,12 @@ def run(args_list=None):
         "TS3006d"
     }
 
-    # meeting_paths = sorted(entry.path for entry in os.scandir(split_path) if entry.is_dir() and entry.name not in meetings_too_long)
-
-    meeting_paths = sorted(entry.path for entry in os.scandir(split_path) if entry.is_dir() and entry.name in {"TS3005d", "IN1012", "ES2005d"})
-
-    # meeting_paths = sorted(entry.path for entry in os.scandir(split_path) if entry.is_dir() and entry.name in {"ES2005d"})
+    if args.meetings is not None:
+        meeting_paths = sorted(entry.path for entry in os.scandir(split_path) if entry.is_dir() and entry.name in set(args.meetings))
+    else:
+        meeting_paths = sorted(entry.path for entry in os.scandir(split_path) if entry.is_dir() and entry.name not in meetings_too_long)
+    meeting_paths = meeting_paths[args.shard_idx::args.num_shards]
+    logger.info(f"Shard {args.shard_idx}/{args.num_shards}: {len(meeting_paths)} meetings -> {save_path}")
     for meeting_path in tqdm(meeting_paths, desc="Processing Meetings", position=0, leave=True):
         meeting_name = os.path.basename(meeting_path)
 

@@ -1,0 +1,67 @@
+You are helping with a qualitative coding task for a research project on speech recognition.
+Do not use any tools: everything you need is in this message. Work only from the text below.
+
+## Background
+A recorded meeting was transcribed by an automatic speech recognizer (ASR). Separately, humans
+produced a ground-truth (GT) transcript. Each row in the table below is one short line from the
+meeting: the ASR text and the GT text for the same stretch of audio. Each row is paired with one
+question from a 10-question comprehension quiz about the meeting. The quiz and its gold answers are:
+
+| q | question | gold answer |
+|---|---|---|
+| q0 | What was identified as the main annoyance of the conference format because it prevented people from attending all talks? | Multiple simultaneous sessions |
+| q1 | Why did one participant say posters were often preferable to oral presentations at the conference? | Because in the same amount of time you can see two or three posters and talk directly to people |
+| q2 | What specific invited talk was singled out as especially good? | The invited speaker talk about an implant in the ear |
+| q3 | What was the main technical advantage claimed for semi-tied covariance matrices over diagonal GMMs in speaker recognition? | It made the results less sensitive to the choice of feature decorrelation procedure |
+| q4 | Why did the discussion say full covariance matrices are impractical for large speech systems? | Because storing and computing with a full 39-by-39 covariance matrix for many models and mixtures is too expensive |
+| q5 | What was the key idea behind the variable-scale feature extraction paper? | To adapt the analysis window length to the stationarity of each speech segment instead of using a fixed window |
+| q6 | What minimum and maximum window sizes were described for the variable-scale framing method? | Minimum 20 milliseconds and maximum 60 milliseconds |
+| q7 | Why did the discussion say the frame shift could not simply be changed when using variable-length windows? | Because changing the shift would change the modulation-spectrum Nyquist frequency for each window |
+| q8 | What was the main criterion used to choose the split point in the variable-scale segmentation method? | A maximum-likelihood ratio test based on residual energy |
+| q9 | Why was Festival described as suitable for real-time text-to-speech on Linux? | Because it is diphone-based |
+
+## Rows to code
+| row | question | ASR text | GT text |
+|---|---|---|---|
+| B01 | q1 | If you compare it with some baseline, let's say you use just GMM with that overall. No, I think they are good results, but just using that also differently... I think it was a slightly better area. And no decoration... Maybe decoration again they do DCT or the other. | But if you compare no, if you compare it with some baseline, let's say you use just G_M_M_ with diagonal covariance matrices A and no decorrelation before like uh Yeah. |
+| B02 | q6 | But maybe you can just take your stuff out. | But it it's not here so far. |
+| B03 | q6 | The fun PCO, the MLT. | So from Mm-hmm. |
+| B04 | q1 | Yeah. | Yeah. |
+| B05 | q6 | Yeah | Mm-hmm. |
+| B06 | q1 | But | Hmm. |
+| B07 | q1 | By the length. Yeah. | By the length. |
+| B08 | q1 | So then what he does is like he proposed like some like loot ratio test based on action like loot. | So then what he does is like he proposed uh like some like ratio test based on maximum likelihood. |
+| B09 | q1 | I just would be right. | Yeah, I see see. |
+| B10 | q1 | 20 millies minimum | This is maybe because of F_F_T_U_ or these things. |
+| B11 | q9 | It's based on the iPhone | It's based on the diphones diphones, right? |
+| B12 | q6 | If you have not | Okay, so we can hope that Nokia will be using tandem tandem P_L_P_s. |
+| B13 | q0 | Sometimes, it will lead to my danger. If you would have to spend a hour and a half that the him and the other you spend while doing with the | Some time, yes, but not so many days or Oh yeah, yeah, that's true. |
+| B14 | q1 | you | Mm-hmm. |
+| B15 | q1 | then you shift to 25 and so forth and then if you the maximum is 60 millisecond frame for him okay so if you don't find anything where what | Then you shift to twenty five and so forth until you Okay, and and you find the point where where what? |
+| B16 | q0 | I think the most of the bad words I had to begin with is precise time. | I think the the most of the bad words are at the beginning when the people try to put in on. |
+| B17 | q6 | He was quoting... It has been used for speech coding... Nobody used it for recognition stuff I think I never heard it. But there... He was a speech coding, so would he used to use it? No, I don't know, of course. Yeah, that's good question. Maybe. Yeah, he was quoting that paper also... He was telling... This... This is kind of optimization created about this temporal decomposition is doing like... | Ne he was re he was quoting But that Yeah, he was uh quoting that paper also, like v he was telling this uh this is kind of optimisation criteria what this temporal decomposition is doing like. |
+| B18 | q1 | before. | Yeah, w we went to the Costa Caparica there, with the bus. |
+| B19 | q1 | And | Mm-hmm. |
+| B20 | q0 | Thank you very much. Thank you very much. | I t I Uh I think it's quite interesting, but only annoying thing is this multiple sessions. |
+
+## What to judge
+For every row, make two independent judgments.
+
+1. mistranscribed: Does the ASR text differ from the GT text in a way that changes or loses meaning?
+   - Yes: words or content differ in a way that changes what was said (wrong words, missing or
+     invented content, a different utterance altogether).
+   - No: same meaning. Ignore differences only in punctuation, capitalization, number formatting
+     ("7" vs "Seven"), filler words (um, uh), false starts, or repeated words.
+
+2. important: Does the GT text help answer the paired question correctly? Judge the GT text on its
+   own, regardless of whether the ASR got it right.
+   - Yes: the GT text states or directly supports (part of) the gold answer.
+   - Partly: the GT text gives context the question is about, but not the answer itself.
+   - No: the GT text is unrelated to the question or its answer.
+
+You only see one line at a time, without surrounding conversation. Judge each line as written;
+do not guess at what nearby lines might say. Rows are in no particular order.
+
+## Output
+Reply with only a JSON array, one object per row, in the same order as the table:
+[{"row": "B01", "mistranscribed": "Yes|No", "important": "Yes|Partly|No", "note": "<= 12 words"}]

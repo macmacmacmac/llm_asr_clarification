@@ -1,0 +1,67 @@
+You are helping with a qualitative coding task for a research project on speech recognition.
+Do not use any tools: everything you need is in this message. Work only from the text below.
+
+## Background
+A recorded meeting was transcribed by an automatic speech recognizer (ASR). Separately, humans
+produced a ground-truth (GT) transcript. Each row in the table below is one short line from the
+meeting: the ASR text and the GT text for the same stretch of audio. Each row is paired with one
+question from a 10-question comprehension quiz about the meeting. The quiz and its gold answers are:
+
+| q | question | gold answer |
+|---|---|---|
+| q0 | Why did the folders in the shared project documents get separated? | Because the shared project documents folder was getting too busy. |
+| q1 | What two things were the prototype presenters expected to show before the evaluation discussion began? | A prototype presentation and the evaluation criteria. |
+| q2 | Why did the team decide to keep teletext out of the options menu? | Because teletext should still be used, but it was considered better as a separate button rather than under the options menu. |
+| q3 | What was the reason given for placing the options menu on the screen where it would not be very irritating? | Because putting it there would keep it from taking up much of the screen and becoming irritating to see. |
+| q4 | What change to the remote's shape was proposed to make room for the screen and batteries? | Make the remote thicker at the top and thinner at the bottom with a side curve. |
+| q5 | Which feature was identified as the one that should be dropped in order to bring the production cost under the budget? | The sample speaker. |
+| q6 | What production-cost limit had to be met for the design to be accepted without redesign? | Twelve euro fifty. |
+| q7 | Why did the team decide that the remote should mainly be sold to younger people? | Because the design, colors, buttons, microphone, LCD screen, and other features were seen as more appealing to younger users. |
+| q8 | What was the main criticism of the way the team worked during the project? | They worked past each other and did not communicate enough, so people had information the others did not. |
+| q9 | What improvement to the work process was suggested to address the communication problem? | Have short sessions together to coordinate, then continue working separately. |
+
+## Rows to code
+| row | question | ASR text | GT text |
+|---|---|---|---|
+| D01 | q6 | We're going to calculate the production costs, if they are under or at 12, you know, 50. We're good. And if you're not, we're going to redesign it. We have to do that. We're ready for quick. I think yes. | Um and we're going to calculate the production costs, and if they are uh under or at twelve Euro fifty, we're good, and if they're not we're going to uh re-design, but we have to do that uh very very quick I think, yes. |
+| D02 | q8 | You had information. I also had some. | Yeah, you had information I didn't have and then uh Oh right. |
+| D03 | q6 | We're going to the hospital. | f fifty five Euros. |
+| D04 | q1 | and did you do something with Eiffeluation Criteria? | And uh m did you do something with evaluation criteria? |
+| D05 | q4 | We're finally getting somewhere. | We're finally getting somewhere hopefully. |
+| D06 | q4 | using the scroll button on the sides. You push the scroll button. And then it's a flat-side. And drop down menu or a full out menu comes out and you get the options becoming available. | Uh using the scroll button on sides uh y uh I uh um Yeah, you push the scroll button and a drop down menu or a pull out menu comes out and uh you get uh you get the options uh becoming available. |
+| D07 | q4 | Good. | Good. |
+| D08 | q2 | I think it's so 3. | I think it's a three. |
+| D09 | q3 | Because it has the regular controls as you can see in the screen now. And you don't have all the other options always on your screen. | Yeah, but because it has the regular uh controls, li uh as you can see in the screen now, and uh you don't have all the other options uh always uh on your screen. |
+| D10 | q0 | I just an idea about the growth and the possibility. | yeah, just uh just an idea about how to m th that could also be possible. |
+| D11 | q4 | Just | Yeah. |
+| D12 | q7 | We're not going to all mainly be salt to younger people. | Remote control mainly be sold to younger people. |
+| D13 | q9 | We could use the scroll wheel. We could just adjust the regular scroll wheel. You have to tap the options window button here and scroll down with the button. No one else scroll wheel. I think we should use the sample speaker. | We could use I think we should scrap the sample speaker. |
+| D14 | q1 | Get fired as a doorknob. | Can you find it as a J_ PEG? |
+| D15 | q2 | with you. | Mm yep. |
+| D16 | q4 | You perhaps you should make it a bit big so people know it's there and to not forget it to function it doesn't really have to be small a big of course | Oh y you perhaps you should make it a bit big, so people know it's there and uh Uh Hmm. |
+| D17 | q4 | And that's everything it does to speak your connection. | And that's everything it does, the speech recognition. |
+| D18 | q4 | Just an example color so there's one of the colors we would like to see in our photo | Just example colour, so uh there's one of the colours we would like to uh see in our prototype. |
+| D19 | q3 | the touch. | S touch. |
+| D20 | q0 | As you may notice, I created separate folders because it was maybe a little busy in our shared project document folder. | Um as you may have noticed I uh created separate folders because it was uh tending to get a little busy in our uh shared project documents uh folder. |
+
+## What to judge
+For every row, make two independent judgments.
+
+1. mistranscribed: Does the ASR text differ from the GT text in a way that changes or loses meaning?
+   - Yes: words or content differ in a way that changes what was said (wrong words, missing or
+     invented content, a different utterance altogether).
+   - No: same meaning. Ignore differences only in punctuation, capitalization, number formatting
+     ("7" vs "Seven"), filler words (um, uh), false starts, or repeated words.
+
+2. important: Does the GT text help answer the paired question correctly? Judge the GT text on its
+   own, regardless of whether the ASR got it right.
+   - Yes: the GT text states or directly supports (part of) the gold answer.
+   - Partly: the GT text gives context the question is about, but not the answer itself.
+   - No: the GT text is unrelated to the question or its answer.
+
+You only see one line at a time, without surrounding conversation. Judge each line as written;
+do not guess at what nearby lines might say. Rows are in no particular order.
+
+## Output
+Reply with only a JSON array, one object per row, in the same order as the table:
+[{"row": "D01", "mistranscribed": "Yes|No", "important": "Yes|Partly|No", "note": "<= 12 words"}]

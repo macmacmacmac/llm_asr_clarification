@@ -1,0 +1,67 @@
+You are helping with a qualitative coding task for a research project on speech recognition.
+Do not use any tools: everything you need is in this message. Work only from the text below.
+
+## Background
+A recorded meeting was transcribed by an automatic speech recognizer (ASR). Separately, humans
+produced a ground-truth (GT) transcript. Each row in the table below is one short line from the
+meeting: the ASR text and the GT text for the same stretch of audio. Each row is paired with one
+question from a 10-question comprehension quiz about the meeting. The quiz and its gold answers are:
+
+| q | question | gold answer |
+|---|---|---|
+| q0 | Why did the folders in the shared project documents get separated? | Because the shared project documents folder was getting too busy. |
+| q1 | What two things were the prototype presenters expected to show before the evaluation discussion began? | A prototype presentation and the evaluation criteria. |
+| q2 | Why did the team decide to keep teletext out of the options menu? | Because teletext should still be used, but it was considered better as a separate button rather than under the options menu. |
+| q3 | What was the reason given for placing the options menu on the screen where it would not be very irritating? | Because putting it there would keep it from taking up much of the screen and becoming irritating to see. |
+| q4 | What change to the remote's shape was proposed to make room for the screen and batteries? | Make the remote thicker at the top and thinner at the bottom with a side curve. |
+| q5 | Which feature was identified as the one that should be dropped in order to bring the production cost under the budget? | The sample speaker. |
+| q6 | What production-cost limit had to be met for the design to be accepted without redesign? | Twelve euro fifty. |
+| q7 | Why did the team decide that the remote should mainly be sold to younger people? | Because the design, colors, buttons, microphone, LCD screen, and other features were seen as more appealing to younger users. |
+| q8 | What was the main criticism of the way the team worked during the project? | They worked past each other and did not communicate enough, so people had information the others did not. |
+| q9 | What improvement to the work process was suggested to address the communication problem? | Have short sessions together to coordinate, then continue working separately. |
+
+## Rows to code
+| row | question | ASR text | GT text |
+|---|---|---|---|
+| B01 | q9 | Yeah. All right. | Yep. |
+| B02 | q3 | Yeah. | Yeah. |
+| B03 | q9 | Hey, can we race that? | Hey, but you can erase that. |
+| B04 | q5 | I think it's a story. | I think it's a three. |
+| B05 | q9 | The curve is in dimension. | The curve is uh in a dimension. |
+| B06 | q3 | And the RNR logo just has RNR now, but okay. And the question is so far. | And the R_ and R_ logo, it just says R_ and R_ now, but uh Any questions so far? |
+| B07 | q3 | Because if you put it on the top, you always get to see the options menu. | 'Cause if you put it on the top you always get see the the options menu. |
+| B08 | q9 | Yeah, everything. | Yeah, everything worked. |
+| B09 | q9 | Dorothy. | Thirteen? |
+| B10 | q9 | if they read the menu. | If they read a manual. |
+| B11 | q3 | As you may notice, I created separate folders because it was maybe a little busy in our shared project document folder. | Um as you may have noticed I uh created separate folders because it was uh tending to get a little busy in our uh shared project documents uh folder. |
+| B12 | q3 | we've tested the way we've tested the way we've tested the way we've tested the way we've tested the way we've tested the way we've tested the way we've tested the way we've tested the way we've tested the way we've tested the way we've | Point twelve. |
+| B13 | q9 | I don't know what this is. | Yep. |
+| B14 | q9 | So, | Looks good. |
+| B15 | q3 | You know, good, it does work. So make some designs. | Yeah, because it shou To make some designs, it is very easy. |
+| B16 | q9 | I'm not going to die. I'm going to die. | Uh. |
+| B17 | q3 | Very true? | Very true? |
+| B18 | q3 | Yeah. | Yep. |
+| B19 | q9 | And it doesn't make it green than the other people. | I if you don't make it green, then the elder people won't won't like it. |
+| B20 | q9 | You got to excel to count. | You got Excel to count. |
+
+## What to judge
+For every row, make two independent judgments.
+
+1. mistranscribed: Does the ASR text differ from the GT text in a way that changes or loses meaning?
+   - Yes: words or content differ in a way that changes what was said (wrong words, missing or
+     invented content, a different utterance altogether).
+   - No: same meaning. Ignore differences only in punctuation, capitalization, number formatting
+     ("7" vs "Seven"), filler words (um, uh), false starts, or repeated words.
+
+2. important: Does the GT text help answer the paired question correctly? Judge the GT text on its
+   own, regardless of whether the ASR got it right.
+   - Yes: the GT text states or directly supports (part of) the gold answer.
+   - Partly: the GT text gives context the question is about, but not the answer itself.
+   - No: the GT text is unrelated to the question or its answer.
+
+You only see one line at a time, without surrounding conversation. Judge each line as written;
+do not guess at what nearby lines might say. Rows are in no particular order.
+
+## Output
+Reply with only a JSON array, one object per row, in the same order as the table:
+[{"row": "B01", "mistranscribed": "Yes|No", "important": "Yes|Partly|No", "note": "<= 12 words"}]

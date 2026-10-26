@@ -1,0 +1,67 @@
+You are helping with a qualitative coding task for a research project on speech recognition.
+Do not use any tools: everything you need is in this message. Work only from the text below.
+
+## Background
+A recorded meeting was transcribed by an automatic speech recognizer (ASR). Separately, humans
+produced a ground-truth (GT) transcript. Each row in the table below is one short line from the
+meeting: the ASR text and the GT text for the same stretch of audio. Each row is paired with one
+question from a 10-question comprehension quiz about the meeting. The quiz and its gold answers are:
+
+| q | question | gold answer |
+|---|---|---|
+| q0 | What was identified as the main annoyance of the conference format because it prevented people from attending all talks? | Multiple simultaneous sessions |
+| q1 | Why did one participant say posters were often preferable to oral presentations at the conference? | Because in the same amount of time you can see two or three posters and talk directly to people |
+| q2 | What specific invited talk was singled out as especially good? | The invited speaker talk about an implant in the ear |
+| q3 | What was the main technical advantage claimed for semi-tied covariance matrices over diagonal GMMs in speaker recognition? | It made the results less sensitive to the choice of feature decorrelation procedure |
+| q4 | Why did the discussion say full covariance matrices are impractical for large speech systems? | Because storing and computing with a full 39-by-39 covariance matrix for many models and mixtures is too expensive |
+| q5 | What was the key idea behind the variable-scale feature extraction paper? | To adapt the analysis window length to the stationarity of each speech segment instead of using a fixed window |
+| q6 | What minimum and maximum window sizes were described for the variable-scale framing method? | Minimum 20 milliseconds and maximum 60 milliseconds |
+| q7 | Why did the discussion say the frame shift could not simply be changed when using variable-length windows? | Because changing the shift would change the modulation-spectrum Nyquist frequency for each window |
+| q8 | What was the main criterion used to choose the split point in the variable-scale segmentation method? | A maximum-likelihood ratio test based on residual energy |
+| q9 | Why was Festival described as suitable for real-time text-to-speech on Linux? | Because it is diphone-based |
+
+## Rows to code
+| row | question | ASR text | GT text |
+|---|---|---|---|
+| A01 | q9 | you can get it installed in your machine here | So it's uh just uh wha samples of the diphones, and it choo chooses Yeah, on my on my laptop. |
+| A02 | q9 | It's based on the iPhone | It's based on the diphones diphones, right? |
+| A03 | q2 | the inventor of that implant and talk for the year, I think. | He's the the inventor of that implant and for for the ear I think. |
+| A04 | q6 | as much as possible like a but they are differently to issue some the minimum and maximum sizes of your own so he is using one his own minimum is I think to around 12.5 milliseconds | Yeah, as much as possible like but yeah, definitely you have to assume some l uh like minimum and maximum sizes of your own, so he is using minimum of minimum is uh I think twe I don't twelve point five milliseconds I think. |
+| A05 | q9 | A for your phones, right? | Diphone, yeah, yeah. |
+| A06 | q9 | Now, mostly the festival what you get on line excumations is definitely based only. | No, most of the the Festival, uh what you get on Linux machines, is diphone based only. |
+| A07 | q1 | So in 20 minutes you can say at least 2-3 posters and you can directly talk to people. | So in t twenty minutes you can see at least two, three posters, and you can directly talk to people, so. |
+| A08 | q2 | How many patients did you help? Priced patients are hardly and full of five work. I like the invited speaker about the implant in the year. Oh, yeah. That's quite good. It was from Austria, right? The guy. I think so. Yeah. Yeah. He's very famous, I think for that right. He's the inventor of the implant and for the year, I think. Even some panel discussions on the human speech recognition. Reducing gap between ASR and | So how many presentation you you I realised it were that there were panel discussions only at the place where I could see the the t t you know, there were some boards saying that there is some panel discussion, uh but I I couldn't get no one knew where is it, what it is, where it happens and why and so forth. |
+| A09 | q7 | So again if you change this shift the modulation spectrum, the frequency changes for each window | So again, if you change this shift, the mod the Nyquist the modulation spectrum, Nyquist frequency changes for each window. |
+| A10 | q2 | I like the invite and speaker about the implant in the year. | I liked the invited speaker um about the implant in the ear. |
+| A11 | q9 | And have we tried it? Yes, I've tried and there are some built in like easy voices which you can There is a dual-one completely synthetic which you cannot understand at all When then there is a iPhone synthesis I think it is the iPhone synthesis from the like something like cat voice Yeah cat voice like they are like they have so so but this doesn't sound very nice and we were playing at the summer school with | Yeah, you can you can easily yes, I d I've tried, but there are some built-in like easy voices which you can y uh there is a default one completely synthetic, which you cannot understand at all, and th then there is a diphone synthesis I think it is the diphone synthesis from the some like something like cat w voice and somethi this is so-so, but it's this doesn't sound very nice, and we were playing at the uh summer school with them, actually with the authors, and they were playing us some other other approaches, and it it sounded like a human, it was great, but Yeah. |
+| A12 | q0 | But maybe like if you can't really recognize you will be really happy. | Yeah, but maybe like if it can't really recognise you it will be really annoying it's better. |
+| A13 | q9 | because I don't know which one is running or if it's time for one or which a process is. | Because uh I don't know which which um what i what is running where uh if it's diphone or which uh approach this is. |
+| A14 | q9 | it is not die phones you have really large inventory of this speech. So, this is not | It's not diphones, you have really large inventory of the speech. |
+| A15 | q9 | This I was tried to install it and there are the voices like cat voice and these voices this is not no they there are so many voices | 'Cause the the diphone that I was tried to install it and there there are the voices like cat voice and these voices, this is not the one? |
+| A16 | q6 | You see, it's more than minimum. | So it's not so mm Two point five milliseconds. |
+| A17 | q4 | No problem, but T-FTC is so many models and so many, and so many. | Ne no problem, but if you see so many models and so many mixtures yeah. |
+| A18 | q7 | So again this may blow some frequency transition or you're... But the problem is again, this bottle like is here like you can't change your micrously-consume resolution. So have two questions. First, essentially how he is doing it that. | So again, this may blur some frequency transitions or yeah, but the problem is again this uh bottleneck is here, like you can't change your Nyquist frequency modulation and Yeah. |
+| A19 | q0 | Thank you very much. Thank you very much. | I t I Uh I think it's quite interesting, but only annoying thing is this multiple sessions. |
+| A20 | q0 | You can't attend multi-processing as the same thing. | Uh you can't attend multiple session at the same time, so. |
+
+## What to judge
+For every row, make two independent judgments.
+
+1. mistranscribed: Does the ASR text differ from the GT text in a way that changes or loses meaning?
+   - Yes: words or content differ in a way that changes what was said (wrong words, missing or
+     invented content, a different utterance altogether).
+   - No: same meaning. Ignore differences only in punctuation, capitalization, number formatting
+     ("7" vs "Seven"), filler words (um, uh), false starts, or repeated words.
+
+2. important: Does the GT text help answer the paired question correctly? Judge the GT text on its
+   own, regardless of whether the ASR got it right.
+   - Yes: the GT text states or directly supports (part of) the gold answer.
+   - Partly: the GT text gives context the question is about, but not the answer itself.
+   - No: the GT text is unrelated to the question or its answer.
+
+You only see one line at a time, without surrounding conversation. Judge each line as written;
+do not guess at what nearby lines might say. Rows are in no particular order.
+
+## Output
+Reply with only a JSON array, one object per row, in the same order as the table:
+[{"row": "A01", "mistranscribed": "Yes|No", "important": "Yes|Partly|No", "note": "<= 12 words"}]

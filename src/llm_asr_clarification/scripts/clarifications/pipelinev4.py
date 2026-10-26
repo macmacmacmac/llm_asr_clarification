@@ -8,6 +8,7 @@ import random
 import re
 import numpy as np
 import ipdb
+from functools import partial
 
 from llm_asr_clarification.models.MistranscriptionDetector import (
     RandomBernoulliDetector,
@@ -19,7 +20,9 @@ from llm_asr_clarification.models.ImportanceDetector import (
     RandomImportanceDetector,
     GTImportanceDetector,
     LSTMImportanceDetector,
-    ALLImportanceDetector
+    ALLImportanceDetector,
+    SampledImportanceDetector,
+    LogpImportanceDetector
 )
 
 MIS_CLS_MAP = {
@@ -33,7 +36,10 @@ IMP_CLS_MAP = {
     'RANDOM' : RandomImportanceDetector,
     'GT' : GTImportanceDetector,
     'LSTM' : LSTMImportanceDetector,
-    'ALL' : ALLImportanceDetector
+    'ALL' : ALLImportanceDetector,
+    'SAMPLED' : SampledImportanceDetector,
+    'LOGP8B' : partial(LogpImportanceDetector, logp_path="./shared/datasets/logp_deltas/train_Qwen3-8B-FP8.pt"),
+    'LOGP32B' : partial(LogpImportanceDetector, logp_path="./shared/datasets/logp_deltas/train_32b.pt")
 }
 
 
@@ -62,7 +68,11 @@ def run(args_list=None):
     parser.add_argument("--importance-detector", type=str, default="LSTM")
     parser.add_argument("--num_lines", type=int, default=20)
     parser.add_argument("--seed", type=int, default=47)
-    
+    parser.add_argument("--meetings", type=str, nargs="+", default=None, help="Only process these meetings (default: all in --ami_path)")
+    parser.add_argument("--sampled-scores-dir", type=str, default="./shared/datasets/sampled_deltas/train_Qwen3-8B-FP8_K8_T0.7", help="Per-meeting .pt files for the SAMPLED importance detector")
+    parser.add_argument("--output-tag", type=str, default="", help="Appended to the importance detector name in the output file name, e.g. '_s1' for a second RANDOM seed")
+    parser.add_argument("--logp-path", type=str, default=None, help="Override the logp deltas .pt read by the LOGP8B/LOGP32B detectors (e.g. a validation-split file)")
+
     args, _ = parser.parse_known_args(args_list)
 
     # Parse CLI arguments to global variables
@@ -91,12 +101,20 @@ def run(args_list=None):
     # │                   LOAD DATA                   │
     # └───────────────────────────────────────────────┘
     meeting_folders = [f for f in DATASET_PATH.iterdir() if f.is_dir()]
+    if args.meetings is not None:
+        meeting_folders = [f for f in meeting_folders if f.name in set(args.meetings)]
 
     def get_mis_detector(detector_name, meeting_folder):
         return MIS_CLS_MAP[detector_name](meeting_path=meeting_folder)
-        
+
     def get_imp_detector(detector_name, meeting_folder, transcript_file):
-        return IMP_CLS_MAP[detector_name](meeting_path=meeting_folder, transcript_file=transcript_file)
+        extra = {"logp_path": args.logp_path} if args.logp_path is not None else {}
+        return IMP_CLS_MAP[detector_name](
+            meeting_path=meeting_folder,
+            transcript_file=transcript_file,
+            sampled_scores_dir=args.sampled_scores_dir,
+            **extra,
+        )
 
     # Wrap logging with tqdm
     with logging_redirect_tqdm(loggers=[logger]):
@@ -162,7 +180,7 @@ def run(args_list=None):
             # ┌───────────────────────────────────────────────┐
             # │                     SAVE                      │
             # └───────────────────────────────────────────────┘
-            clarified_file_name = f"{TRANSCRIPT_FILE.split('.')[0]}_{args.mistranscription_detector.lower()}_{args.importance_detector.lower()}_{args.num_lines}_clarify4.txt"
+            clarified_file_name = f"{TRANSCRIPT_FILE.split('.')[0]}_{args.mistranscription_detector.lower()}_{args.importance_detector.lower()}{args.output_tag}_{args.num_lines}_clarify4.txt"
             fixed_transcript_file_path = meeting_folder / "transcripts" / clarified_file_name
             with open(fixed_transcript_file_path, "w", encoding="utf-8") as f:
                 f.write("\n".join(updated_transcript_lines))

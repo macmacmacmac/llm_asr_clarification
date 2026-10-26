@@ -1,0 +1,67 @@
+You are helping with a qualitative coding task for a research project on speech recognition.
+Do not use any tools: everything you need is in this message. Work only from the text below.
+
+## Background
+A recorded meeting was transcribed by an automatic speech recognizer (ASR). Separately, humans
+produced a ground-truth (GT) transcript. Each row in the table below is one short line from the
+meeting: the ASR text and the GT text for the same stretch of audio. Each row is paired with one
+question from a 10-question comprehension quiz about the meeting. The quiz and its gold answers are:
+
+| q | question | gold answer |
+|---|---|---|
+| q0 | Why did the folders in the shared project documents get separated? | Because the shared project documents folder was getting too busy. |
+| q1 | What two things were the prototype presenters expected to show before the evaluation discussion began? | A prototype presentation and the evaluation criteria. |
+| q2 | Why did the team decide to keep teletext out of the options menu? | Because teletext should still be used, but it was considered better as a separate button rather than under the options menu. |
+| q3 | What was the reason given for placing the options menu on the screen where it would not be very irritating? | Because putting it there would keep it from taking up much of the screen and becoming irritating to see. |
+| q4 | What change to the remote's shape was proposed to make room for the screen and batteries? | Make the remote thicker at the top and thinner at the bottom with a side curve. |
+| q5 | Which feature was identified as the one that should be dropped in order to bring the production cost under the budget? | The sample speaker. |
+| q6 | What production-cost limit had to be met for the design to be accepted without redesign? | Twelve euro fifty. |
+| q7 | Why did the team decide that the remote should mainly be sold to younger people? | Because the design, colors, buttons, microphone, LCD screen, and other features were seen as more appealing to younger users. |
+| q8 | What was the main criticism of the way the team worked during the project? | They worked past each other and did not communicate enough, so people had information the others did not. |
+| q9 | What improvement to the work process was suggested to address the communication problem? | Have short sessions together to coordinate, then continue working separately. |
+
+## Rows to code
+| row | question | ASR text | GT text |
+|---|---|---|---|
+| E01 | q5 | But I think the only option is to top the set speaker to knock the samples | But I think the only option is to drop the uh sample speaker. |
+| E02 | q5 | We could use the scroll wheel. We could just adjust the regular scroll wheel. You have to tap the options window button here and scroll down with the button. No one else scroll wheel. I think we should use the sample speaker. | We could use I think we should scrap the sample speaker. |
+| E03 | q7 | Because younger people are critical and they wanted a lot of features on this thing. | Because younger peoples are cr critical and they wanted a lot of features on this thing. |
+| E04 | q5 | The Sevelspeaker stood in the floor for | The sample speaker is two d wait, f s four points. |
+| E05 | q6 | 12-year-old, 15. | Twelve Euro fifty. |
+| E06 | q5 | Thank you. | Sample speaker. |
+| E07 | q5 | microphot. | The microphone. |
+| E08 | q5 | We have simple tips, advanced tips, right? We have simple tips, advanced tips. | We have No, we have sample speaker. |
+| E09 | q2 | there you have your written option on here the data text button right? Yeah | Yeah, okay, but you have y then you have here s written option on here, the teletext button, right? |
+| E10 | q4 | It's also a very handy if you make a side curve way to make the remote control very thin, at the bottom, at the bottom. | That's not very i it's also uh very handy if you make a side curve way to make the the remote control very thin at the bottom uh at a bottom at a bottom. |
+| E11 | q2 | And the options, the daily text. | And the options uh of teletext. |
+| E12 | q2 | OK, it's also nice to see that we make a small menu, the options menu are becoming available when pressing the scroll button, and the opportunity to use the date text, which is still used, and we think that it's very handy to put it not under the options menu, but you know, | Okay, um it's also uh nice to see that um we made a small uh menu, uh the options menu uh becoming available when pressing the uh scroll uh button, and the opportunity to use the teletext, whi which is used uh which should still be used and we think that it's uh very handy to put it uh not uh under the options menu, but in uh Yes. |
+| E13 | q3 | So you can draw a sea like a splinter. | So you can draw uh see it over th on the screen. |
+| E14 | q0 | As you may notice, I created separate folders because it was maybe a little busy in our shared project document folder. | Um as you may have noticed I uh created separate folders because it was uh tending to get a little busy in our uh shared project documents uh folder. |
+| E15 | q9 | or maybe session of 5 minutes to get over something and then work. | Yeah, no, or maybe session of five minutes together or something, and then work separate. |
+| E16 | q2 | You can see fairly now that the teletext and option menu isn't taking much part of the screen, so it's very when you use it doesn't become irritating to see. | You can see very clearly now that the uh teletext and options menu isn't uh taking uh much uh uh it's taking much part of the screen, so it's very uh when you uh when you use it, doesn't uh become irritating to see. |
+| E17 | q5 | to knock the sample speaker. | To knock the sample speaker, yeah. |
+| E18 | q5 | The microphone. | The microphone. |
+| E19 | q1 | I'm still going to take some minutes and if I'm right you two are going to give a prototype presentation. | Um I'm still going to take some minutes, and if I'm right, you two are going to give a prototype presentation? |
+| E20 | q6 | We're going to the hospital. | f fifty five Euros. |
+
+## What to judge
+For every row, make two independent judgments.
+
+1. mistranscribed: Does the ASR text differ from the GT text in a way that changes or loses meaning?
+   - Yes: words or content differ in a way that changes what was said (wrong words, missing or
+     invented content, a different utterance altogether).
+   - No: same meaning. Ignore differences only in punctuation, capitalization, number formatting
+     ("7" vs "Seven"), filler words (um, uh), false starts, or repeated words.
+
+2. important: Does the GT text help answer the paired question correctly? Judge the GT text on its
+   own, regardless of whether the ASR got it right.
+   - Yes: the GT text states or directly supports (part of) the gold answer.
+   - Partly: the GT text gives context the question is about, but not the answer itself.
+   - No: the GT text is unrelated to the question or its answer.
+
+You only see one line at a time, without surrounding conversation. Judge each line as written;
+do not guess at what nearby lines might say. Rows are in no particular order.
+
+## Output
+Reply with only a JSON array, one object per row, in the same order as the table:
+[{"row": "E01", "mistranscribed": "Yes|No", "important": "Yes|Partly|No", "note": "<= 12 words"}]

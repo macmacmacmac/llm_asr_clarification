@@ -1,0 +1,67 @@
+You are helping with a qualitative coding task for a research project on speech recognition.
+Do not use any tools: everything you need is in this message. Work only from the text below.
+
+## Background
+A recorded meeting was transcribed by an automatic speech recognizer (ASR). Separately, humans
+produced a ground-truth (GT) transcript. Each row in the table below is one short line from the
+meeting: the ASR text and the GT text for the same stretch of audio. Each row is paired with one
+question from a 10-question comprehension quiz about the meeting. The quiz and its gold answers are:
+
+| q | question | gold answer |
+|---|---|---|
+| q0 | What was the main reason given for flattening the remote-control shape instead of keeping the curved version? | To save two Euros. |
+| q1 | Why did the team decide not to prioritize adding the extra scroll buttons to the design? | Because the team was trying to save money and did not want to spend extra if the current design was acceptable. |
+| q2 | What feature was described as the main interaction method for the first prototype, with buttons kept to a minimum? | Speech recognition. |
+| q3 | Why was the tomato-based prototype included even though tomatoes had not been part of the earlier discussion? | Because there was some red material left over, so they used it for a tomato design. |
+| q4 | What was the purpose of the yellow element on the first prototype? | It was the slogan that needed to be incorporated. |
+| q5 | Why were the scroll buttons placed with some hesitation on the design? | Because they could get bashed where people hold the device. |
+| q6 | What was the stated reason for the big red button being placed in the middle rather than in a traditional location? | Because it was an obvious place and also out of the way. |
+| q7 | What specific problem did the team identify with the fruit-shaped designs when discussing company strategy and sales? | That limiting the product to only a few fruit shapes would limit customers and therefore reduce sales and profit. |
+| q8 | What final overall evaluation score did the team agree on after averaging the individual ratings? | Two. |
+| q9 | What conclusion did the team reach about the project after the evaluation and budget discussion? | That they were done and could launch the product because it was within budget. |
+
+## Rows to code
+| row | question | ASR text | GT text |
+|---|---|---|---|
+| B01 | q2 | Not right, OK. OK. | Alright, okay, yeah. |
+| B02 | q2 | Well, if you hold it, it does actually feel quite ergonomic if you've got some hands. | Well, if you hold it, you can you all can hold it, is it does actually feel quite ergonomic, if you've got small hands. |
+| B03 | q2 | I think we're very creative. | W I think we were very creative. |
+| B04 | q2 | This is a requirement is essentially just an upper. | When the user requirement is essentially just to operate the T_V_, so yeah, of course we haven't actually got a working model yet. |
+| B05 | q2 | Yeah, everyone got enough info I think. | Yeah, everyone got enough input, I think. |
+| B06 | q2 | Aw. | Oh. |
+| B07 | q2 | That's a good one. | The board working again, is it? |
+| B08 | q2 | They don't. | Mm-hmm. |
+| B09 | q1 | So we can say 1.0.2. | So we can say one or two. |
+| B10 | q2 | I'm happy. | Are we happy? |
+| B11 | q2 | I'm so sorry. | Sorry uh. |
+| B12 | q1 | Keep playing wait you want us to wait them | Can you explain what you want us to write there? |
+| B13 | q3 | He's not allowed to go. | What tomato? |
+| B14 | q3 | So, I don't even have a soul of them. | I don't even have this on. |
+| B15 | q2 | in and out. | Mm-hmm. |
+| B16 | q4 | It does also lie flat, but that's the yellow sand there represents the charging stand. | It does also lie flat, but that's the that yellow stand there represents the the charging stand. |
+| B17 | q4 | But you can give your views based on technology, whether the technology meets the requirements of the customer's or not. | But you can give your views based on technology, whether the technology meets the requirements of the customers or not? |
+| B18 | q2 | Um, see ya, love. | Well it was yellow. |
+| B19 | q2 | You just select one books. Yeah, this books. | You just select one box outsi yeah, this box. |
+| B20 | q2 | That kind of unfortunately is too quick. Okay. Well... | That kind of unfortunately is too quick. |
+
+## What to judge
+For every row, make two independent judgments.
+
+1. mistranscribed: Does the ASR text differ from the GT text in a way that changes or loses meaning?
+   - Yes: words or content differ in a way that changes what was said (wrong words, missing or
+     invented content, a different utterance altogether).
+   - No: same meaning. Ignore differences only in punctuation, capitalization, number formatting
+     ("7" vs "Seven"), filler words (um, uh), false starts, or repeated words.
+
+2. important: Does the GT text help answer the paired question correctly? Judge the GT text on its
+   own, regardless of whether the ASR got it right.
+   - Yes: the GT text states or directly supports (part of) the gold answer.
+   - Partly: the GT text gives context the question is about, but not the answer itself.
+   - No: the GT text is unrelated to the question or its answer.
+
+You only see one line at a time, without surrounding conversation. Judge each line as written;
+do not guess at what nearby lines might say. Rows are in no particular order.
+
+## Output
+Reply with only a JSON array, one object per row, in the same order as the table:
+[{"row": "B01", "mistranscribed": "Yes|No", "important": "Yes|Partly|No", "note": "<= 12 words"}]

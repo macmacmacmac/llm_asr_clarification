@@ -32,6 +32,9 @@ class RandomImportanceDetector(ImportanceDetector):
         mask = np.zeros(len(line_numbers), dtype=bool)
         idx = np.random.choice(len(line_numbers), min(len(line_numbers), self.num_lines), replace=False)
         mask[idx] = True
+        if return_conf:
+            # Random confidences so ranking by confidence (pipelinev4) picks random lines
+            return mask.tolist(), np.random.random(len(line_numbers)).tolist()
         return mask.tolist()
 
 class ALLImportanceDetector(ImportanceDetector):
@@ -155,4 +158,76 @@ class LSTMImportanceDetector(ImportanceDetector):
             confs = self._confs
             self._confs = []
             return preds, confs
+        return preds
+
+
+def _minmax(x: np.ndarray) -> np.ndarray:
+    x_min, x_max = x.min(), x.max()
+    return (x - x_min) / (x_max - x_min) if x_max > x_min else np.zeros_like(x)
+
+
+class SampledImportanceDetector(ImportanceDetector):
+    """
+    Oracle importance from importance_detection/generate_sampled_deltas.py. Per line: expected total
+    quiz score after clarifying only that line (sum of the 0/1 grades over questions, averaged over
+    the K samples), standardized across lines. Lines whose GT equals the ASR line get the lowest score.
+    Confidences are min-max scaled to [0, 1] like GTImportanceDetector so they combine with
+    mistranscription confidences on the same scale; the ranking is unchanged.
+    """
+    def __init__(self, **kwargs):
+        defaults = {
+            'meeting_path': "./shared/datasets/amicorpus/train/ES2005d/",
+            'sampled_scores_dir': "./shared/datasets/sampled_deltas/train_Qwen3-8B-FP8_K8_T0.7",
+            'z_threshold': 0.0,
+        }
+        params = {**defaults, **kwargs}
+        meeting_name = os.path.basename(os.path.normpath(params['meeting_path']))
+        data = torch.load(os.path.join(params['sampled_scores_dir'], f"{meeting_name}.pt"), weights_only=False)
+
+        scores = data["mean_score"][1:].double().numpy()
+        valid = ~data["is_noop"].numpy()
+        z = (scores - scores[valid].mean()) / scores[valid].std()
+        self.z = np.where(valid, z, z[valid].min())
+        self.z_threshold = params['z_threshold']
+
+    def get_important_lines(self, line_numbers: list[int], return_conf: bool = False):
+        preds = [bool(self.z[i] > self.z_threshold) for i in line_numbers]
+        if return_conf:
+            confs = _minmax(self.z)
+            return preds, [float(confs[i]) for i in line_numbers]
+        return preds
+
+
+class LogpImportanceDetector(ImportanceDetector):
+    """
+    Oracle importance from importance_detection/generate_logp_deltas.py. Per question, the gold-answer
+    logp with only line j clarified is z-scored across lines; the line score is the max over questions.
+    Lines whose GT equals the ASR line get the lowest score. Confidences are min-max scaled to [0, 1].
+    """
+    def __init__(self, **kwargs):
+        defaults = {
+            'meeting_path': "./shared/datasets/amicorpus/train/ES2005d/",
+            'logp_path': "./shared/datasets/logp_deltas/train_32b.pt",
+            'transcript_file': 'custom_transcript_gt_segments.txt',
+            'z_threshold': 3.0,
+        }
+        params = {**defaults, **kwargs}
+        meeting_name = os.path.basename(os.path.normpath(params['meeting_path']))
+        logps = torch.load(params['logp_path'])[meeting_name]["logps"][1:].double().numpy()  # [N, Q]
+
+        with open(os.path.join(params['meeting_path'], "transcripts", params['transcript_file']), "r") as f:
+            asr_lines = [line.strip() for line in f]
+        with open(os.path.join(params['meeting_path'], "transcripts", "parsed_diarized_gt.txt"), "r") as f:
+            gt_lines = [line.strip() for line in f]
+        valid = np.array([a != g for a, g in zip(asr_lines, gt_lines)])
+
+        z = ((logps - logps[valid].mean(axis=0)) / logps[valid].std(axis=0)).max(axis=1)
+        self.z = np.where(valid, z, z[valid].min())
+        self.z_threshold = params['z_threshold']
+
+    def get_important_lines(self, line_numbers: list[int], return_conf: bool = False):
+        preds = [bool(self.z[i] > self.z_threshold) for i in line_numbers]
+        if return_conf:
+            confs = _minmax(self.z)
+            return preds, [float(confs[i]) for i in line_numbers]
         return preds
