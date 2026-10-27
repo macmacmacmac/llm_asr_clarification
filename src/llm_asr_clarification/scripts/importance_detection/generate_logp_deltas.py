@@ -1,4 +1,32 @@
+"""
+Generate teacher-forced quiz answer log-probability deltas for each ASR segment.
+
+Determinism Notes
+-----------------
+Why earlier runs were non-deterministic across Slurm jobs:
+- By default, vLLM enables `torch.compile`, which benchmarks candidate GPU kernels
+  by wall-clock speed on startup and stores compiled kernel binaries in node-local
+  `/tmp/torchinductor_<user>`.
+- Because each Slurm node has its own `/tmp` (and concurrent jobs on the same node
+  can collide in `/tmp`), jobs missing those `/tmp` files re-ran live speed benchmarks
+  at startup. Small GPU timing noise caused different runs to pick slightly different
+  kernel tile sizes (different floating-point addition orders), which snowballed
+  across 64 FP8 layers into noticeable log-prob differences.
+
+Settings in this script that ensure bit-for-bit (`torch.equal`) determinism:
+1. `VLLM_ENABLE_V1_MULTIPROCESSING="0"` — runs the vLLM engine synchronously in one process.
+2. `enforce_eager=True` in `LLM(...)` — disables `torch.compile` (no `/tmp` kernel cache
+   or live GPU autotuning) and CUDA graphs, so every node runs identical fixed C++/CUDA kernels.
+3. `async_scheduling=False` in `LLM(...)` — keeps scheduler batching deterministic.
+4. `seed=47` and `temperature=0.0` in `LLM(...)` / `SamplingParams(...)` — fixes RNG state.
+5. `llm.reset_prefix_cache()` before each meeting — prevents KV cache hits across meetings
+   so each meeting's result is independent of meeting order and sharding.
+6. Deterministic prompt deduplication and fixed `chunk_size = 1000` per meeting.
+"""
+
 import os
+os.environ["VLLM_ENABLE_V1_MULTIPROCESSING"] = "0"
+
 import json
 import gc
 import time
@@ -31,13 +59,20 @@ def run(args_list=None):
 
     # Perform CLI Argument Parsing
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", type=str, default="Qwen/Qwen3-8B-FP8")
+    parser.add_argument("--model", type=str, default="Qwen/Qwen3-32B-FP8")
     parser.add_argument("--ami-path", type=str, default="./shared/datasets/amicorpus")
     parser.add_argument("--split", type=str, default="train")
     parser.add_argument("--tensor-parallel-size", type=int, default=1)
     parser.add_argument("--max-model-len", type=int, default=40960)
+    parser.add_argument("--output-name", type=str, default="run1")
+    parser.add_argument("--shard-id", type=int, default=0)
+    parser.add_argument("--num-shards", type=int, default=1)
+    parser.add_argument("--test-5", action="store_true")
+    parser.add_argument("--reverse", action="store_true")
 
     args, _ = parser.parse_known_args(args_list)
+    if not (0 <= args.shard_id < args.num_shards):
+        raise ValueError(f"--shard-id ({args.shard_id}) must be in [0, {args.num_shards})")
 
     logger = get_logger(exp_name)
     logger.info(f"{'='*100}\n\t\t\t\tRunning script: {exp_name}\n{'='*100}")
@@ -56,6 +91,8 @@ def run(args_list=None):
         seed=47,
         enable_prefix_caching=True,
         gpu_memory_utilization=0.95,
+        async_scheduling=False,
+        enforce_eager=True,
     )
 
     tokenizer = llm.get_tokenizer()
@@ -73,7 +110,8 @@ def run(args_list=None):
 
     logp_deltas = {}
     model_name = args.model.split("/")[-1]
-    save_path = f"./shared/datasets/logp_deltas/{args.split}_32b.pt"
+    shard_suffix = f"_shard{args.shard_id}" if args.num_shards > 1 else ""
+    save_path = f"./shared/datasets/logp_deltas/{args.split}_{args.output_name}{shard_suffix}.pt"
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     if os.path.exists(save_path):
         logp_deltas = torch.load(save_path)
@@ -95,9 +133,28 @@ def run(args_list=None):
         "TS3006d"
     }
 
-    # meeting_paths = sorted(entry.path for entry in os.scandir(split_path) if entry.is_dir() and entry.name not in meetings_too_long)
+    meetings_to_do = {
+        "ES2005a",
+        "IS1004a",
+        "ES2012a",
+        "ES2003a",
+        "ES2013a"
+    }
 
-    meeting_paths = sorted(entry.path for entry in os.scandir(split_path) if entry.is_dir() and entry.name in {"TS3005d", "IN1012", "ES2005d"})
+    target_filter = (lambda name: name in meetings_to_do) if args.test_5 else (lambda name: name not in meetings_too_long)
+    meeting_paths = sorted(entry.path for entry in os.scandir(split_path) if entry.is_dir() and target_filter(entry.name))
+    meeting_paths = meeting_paths[args.shard_id :: args.num_shards]
+    if args.reverse:
+        meeting_paths = list(reversed(meeting_paths))
+    logger.info(
+        f"Shard {args.shard_id}/{args.num_shards} (reverse={args.reverse}): "
+        f"assigned {len(meeting_paths)} meetings {[os.path.basename(p) for p in meeting_paths]} (saving to {save_path})."
+    )
+
+    # if args.output_name == "run1":
+    #     meeting_paths = sorted(entry.path for entry in os.scandir(split_path) if entry.is_dir() and entry.name in meetings_to_do)
+    # else:
+    #     meeting_paths = sorted((entry.path for entry in os.scandir(split_path) if entry.is_dir() and entry.name in meetings_to_do), reverse=True)        
 
     # meeting_paths = sorted(entry.path for entry in os.scandir(split_path) if entry.is_dir() and entry.name in {"ES2005d"})
     for meeting_path in tqdm(meeting_paths, desc="Processing Meetings", position=0, leave=True):
@@ -201,6 +258,7 @@ def run(args_list=None):
             logger.warning(f"[{meeting_name}] Prompt too long ({max_prompt_len} > {args.max_model_len}), skipping.")
             continue
 
+        llm.reset_prefix_cache()
         logger.info(f"[{meeting_name}] Generating {len(prompts)} log probs in chunks...")
         start_time = time.time()
         
