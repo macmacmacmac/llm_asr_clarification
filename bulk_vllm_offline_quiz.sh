@@ -75,11 +75,16 @@ echo "Starting vLLM Offline Bulk Pipeline..."
 
 # LLM line labels: N=50 clarifies every cited line (no meeting has more than 50)
 python -u -m run_scripts --scripts quiz.bulk_vllm_offline_quiz \
+<<<<<<< HEAD
     --answering-model "Qwen/Qwen3-32B-FP8" \
     --scoring-model "Qwen/Qwen3-32B-FP8" \
     --transcript-subdir oracle-labels \
     --importance-detectors oracleattr \
     --mistranscript-detectors ALL \
     --num-lines 50
+=======
+    --answering-model "Qwen/Qwen3-4B" \
+    --scoring-model "Qwen/Qwen3-8B"
+>>>>>>> main
 
 echo "Pipeline completed."

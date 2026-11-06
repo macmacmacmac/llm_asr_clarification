@@ -155,6 +155,23 @@ def get_ground_truth_segments(gt_transcript_path: Path):
 
 
 
+
+def add_partial_noise(
+    chunk: np.ndarray,
+    noise_fraction: float,
+    scale: float = 0.002,
+) -> np.ndarray:
+    
+    n = len(chunk)
+    noise_len = int(n * noise_fraction)
+    max_start = n - noise_len
+    start = np.random.randint(0, max_start + 1) if max_start > 0 else 0
+
+    noised = chunk.copy()
+    noised[start : start + noise_len] += np.random.normal(loc=0.0, scale=scale, size=noise_len).astype(chunk.dtype)
+    return noised
+
+
 # Driver Code
 def run(args_list=None):
 
@@ -170,7 +187,11 @@ def run(args_list=None):
     parser.add_argument("--llm-model-name", type=str, default="meta-llama/Llama-3.1-8B-Instruct")
     parser.add_argument("--num-beams", type=int, default=5)
     parser.add_argument("--meeting-name", type=str, default="")
-    parser.add_argument("--add-noise", action="store_true")
+    noise_group = parser.add_mutually_exclusive_group()
+    noise_group.add_argument("--add-noise", action="store_true", help="Add Gaussian noise to the entire waveform before chunking.")
+    noise_group.add_argument("--add-partial-noise", action="store_true", help="Add Gaussian noise to a random sub-segment of each audio chunk.")
+    parser.add_argument("--noise-fraction", type=float, default=0.30, help="Fraction of each chunk to noise in --add-partial-noise mode.")
+    parser.add_argument("--noise-seed", type=int, default=47, help="Random seed for partial noise sub-segment selection. Default: 47")
 
     args, _ = parser.parse_known_args(args_list)
 
@@ -180,6 +201,12 @@ def run(args_list=None):
     DATASET_PATH = Path(args.dataset_path)
     NUM_BEAMS = args.num_beams
     ADD_NOISE = args.add_noise
+    ADD_PARTIAL_NOISE = args.add_partial_noise
+    NOISE_FRACTION = args.noise_fraction
+    NOISE_SEED = args.noise_seed
+
+    # Set global numpy seed for reproducible partial-noise sub-segment selection
+    np.random.seed(NOISE_SEED)
 
     # Other Global Variables
     global DEVICE
@@ -334,7 +361,12 @@ def run(args_list=None):
             
             for segment in tqdm(gt_segments, desc="Transcribing", position=1, leave=False, mininterval=1.0):
 
-                # Extract Start and End Frame
+                # Extract Start and End Frame.
+                # int() is required here: numpy array indices must be integers.
+                # Multiplying a float timestamp by SAMPLING_RATE yields a float
+                # frame number (e.g., 15.87 * 16000 = 253920.0); int() truncates
+                # it to a valid index. This does NOT lose audio — the sub-sample
+                # remainder (<1 frame, <0.0001 s) is negligible.
                 start_frame = int(segment["start"] * SAMPLING_RATE)
                 end_frame = int(segment["end"] * SAMPLING_RATE)
 
@@ -343,6 +375,10 @@ def run(args_list=None):
 
                 # Retrieve audio chunk
                 chunk = waveform[start_frame: end_frame]
+
+                # Add partial Gaussian noise to a random sub-segment (optional)
+                if ADD_PARTIAL_NOISE:
+                    chunk = add_partial_noise(chunk, NOISE_FRACTION, scale=0.002)
 
                 # TRANSCRIPTION
                 beam_results = perform_transcription(
@@ -378,11 +414,12 @@ def run(args_list=None):
                     if best_speaker != "UNKNOWN":
                         last_valid_speaker = best_speaker
                 
+                # Store float timestamps directly — int() would re-truncate the sub-second precision
                 speaker_separated_data.append({
                     "speaker": best_speaker,
                     "beam_results": beam_results,
-                    "start": int(segment["start"]),
-                    "end": int(segment["end"]),
+                    "start": segment["start"],
+                    "end": segment["end"],
                     "gt_text": gt_text
                 })
 
@@ -397,6 +434,8 @@ def run(args_list=None):
 
             if ADD_NOISE:
                 transcript_file_path = transcripts_folder / "custom_transcript_gt_segments_noise.txt"
+            elif ADD_PARTIAL_NOISE:
+                transcript_file_path = transcripts_folder / "custom_transcript_gt_segments_partial_noise.txt"
             else:
                 transcript_file_path = transcripts_folder / "custom_transcript_gt_segments.txt"
             with open(transcript_file_path, "w", encoding="utf-8") as f:
@@ -424,6 +463,8 @@ def run(args_list=None):
 
             if ADD_NOISE:
                 beam_results_path = artifacts_folder / "beam_results_noise.json"
+            elif ADD_PARTIAL_NOISE:
+                beam_results_path = artifacts_folder / "beam_results_partial_noise.json"
             else:
                 beam_results_path = artifacts_folder / "beam_results.json"
             with open(beam_results_path, "w") as f:

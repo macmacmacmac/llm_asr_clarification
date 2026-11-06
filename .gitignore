@@ -37,3 +37,9 @@ logs/*
 
 # Ignore output files
 *.out
+
+# Ignore all .log files
+*.log
+
+# Ignore all archived folders
+**/archived/*
