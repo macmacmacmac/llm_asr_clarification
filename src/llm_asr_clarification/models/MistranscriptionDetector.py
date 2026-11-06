@@ -102,7 +102,7 @@ class RandomBernoulliDetector(MistranscriptionDetector):
         self.p = p
 
         # Read the transcript using the provided path
-        beam_results = os.path.join(meeting_path, "artifacts", "beam_results_2.json")
+        beam_results = os.path.join(meeting_path, "artifacts", "beam_results.json")
         with open(beam_results, "r", encoding="utf-8") as f:
             lines = f.read()
         lines = json.loads(lines)
@@ -176,7 +176,7 @@ class GTDetector(MistranscriptionDetector):
         self.rougeL_threshold = params['rougeL_threshold']
 
         # Read the transcript using the provided path
-        beam_results = os.path.join(meeting_path, "artifacts", "beam_results_2.json")
+        beam_results = os.path.join(meeting_path, "artifacts", "beam_results.json")
         with open(beam_results, "r", encoding="utf-8") as f:
             lines = f.read()
         lines = json.loads(lines)
@@ -252,7 +252,7 @@ class RFDetector(MistranscriptionDetector):
         self.prob_threshold = params['prob_threshold']
 
         # Read the transcript using the provided path
-        beam_results = os.path.join(meeting_path, "artifacts", "beam_results_2.json")
+        beam_results = os.path.join(meeting_path, "artifacts", "beam_results.json")
         with open(beam_results, "r", encoding="utf-8") as f:
             lines = f.read()
         lines = json.loads(lines)

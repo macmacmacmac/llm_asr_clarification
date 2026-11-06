@@ -62,6 +62,10 @@ def run(args_list=None):
     parser.add_argument("--importance-detector", type=str, default="LSTM")
     parser.add_argument("--num_lines", type=int, default=20)
     parser.add_argument("--seed", type=int, default=47)
+    parser.add_argument("--importance-model-path", type=str, default=None, help="Weights for the LSTM importance detector (default: the detector's built-in path)")
+    parser.add_argument("--run-name", type=str, default=None, help="Replaces the importance detector name in output file names, e.g. lstmmask")
+    parser.add_argument("--score-op", type=str, choices=["add", "multiply"], default="add", help="How to combine mistranscription and importance confidences")
+    parser.add_argument("--output-subdir", type=str, default="", help="Subfolder of transcripts/ for the clarified files")
     
     args, _ = parser.parse_known_args(args_list)
 
@@ -96,7 +100,10 @@ def run(args_list=None):
         return MIS_CLS_MAP[detector_name](meeting_path=meeting_folder)
         
     def get_imp_detector(detector_name, meeting_folder, transcript_file):
-        return IMP_CLS_MAP[detector_name](meeting_path=meeting_folder, transcript_file=transcript_file)
+        kwargs = {"meeting_path": meeting_folder, "transcript_file": transcript_file}
+        if args.importance_model_path:
+            kwargs["model_path"] = args.importance_model_path
+        return IMP_CLS_MAP[detector_name](**kwargs)
 
     # Wrap logging with tqdm
     with logging_redirect_tqdm(loggers=[logger]):
@@ -135,7 +142,10 @@ def run(args_list=None):
             logger.info(f"Importance detector predicted: {num_important} important lines out of {num_lines} lines")
 
             # Combine confidences
-            final_scores = [mis_confs[i] + imp_confs[i] for i in line_numbers]
+            if args.score_op == "multiply":
+                final_scores = [mis_confs[i] * imp_confs[i] for i in line_numbers]
+            else:
+                final_scores = [mis_confs[i] + imp_confs[i] for i in line_numbers]
             
             # Shuffle line_numbers so ties are broken randomly, then rank ALL lines by final_scores
             random.shuffle(line_numbers)
@@ -162,8 +172,12 @@ def run(args_list=None):
             # ┌───────────────────────────────────────────────┐
             # │                     SAVE                      │
             # └───────────────────────────────────────────────┘
-            clarified_file_name = f"{TRANSCRIPT_FILE.split('.')[0]}_{args.mistranscription_detector.lower()}_{args.importance_detector.lower()}_{args.num_lines}_clarify4.txt"
-            fixed_transcript_file_path = meeting_folder / "transcripts" / clarified_file_name
+            importance_name = args.run_name or args.importance_detector.lower()
+            op_suffix = "_mul" if args.score_op == "multiply" else ""
+            clarified_file_name = f"{TRANSCRIPT_FILE.split('.')[0]}_{args.mistranscription_detector.lower()}_{importance_name}_{args.num_lines}{op_suffix}_clarify4.txt"
+            output_dir = meeting_folder / "transcripts" / args.output_subdir
+            output_dir.mkdir(parents=True, exist_ok=True)
+            fixed_transcript_file_path = output_dir / clarified_file_name
             with open(fixed_transcript_file_path, "w", encoding="utf-8") as f:
                 f.write("\n".join(updated_transcript_lines))
                 

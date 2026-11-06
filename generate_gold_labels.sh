@@ -8,8 +8,8 @@
 #SBATCH -t 2-00:00:00
 #SBATCH --gres=gpu:1
 #SBATCH -C RTX6000B
-#SBATCH -o det5.out
-#SBATCH -e det5.out
+#SBATCH -o mask.out
+#SBATCH -e mask.out
 
 nvidia-smi
 
@@ -33,10 +33,18 @@ echo "Starting vLLM Offline Bulk Pipeline..."
 #     --stride 1
 
 
-python -u -m run_scripts --scripts importance_detection.generate_logp_deltas \
+# python -u -m run_scripts --scripts importance_detection.generate_logp_deltas \
+#     --model Qwen/Qwen3-32B-FP8 \
+#     --split train \
+#     "$@"
+
+python -u -m run_scripts --scripts importance_detection.generate_mask_logp_deltas \
     --model Qwen/Qwen3-32B-FP8 \
-    --split train \
     "$@"
 
+
+# python run_scripts.py --scripts importance_detection.generate_mask_logp_deltas \
+#     --ami-path ./shared/datasets/amicorpus --split train \
+#     --meetings ES2005d --output-name mask_es2005d
 
 echo "Pipeline completed."

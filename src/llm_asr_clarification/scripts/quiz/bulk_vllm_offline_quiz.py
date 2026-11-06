@@ -59,6 +59,11 @@ def run(args_list=None):
     parser.add_argument("--tensor-parallel-size", type=int, default=1)
     parser.add_argument("--max-model-len", type=int, default=40960)
     parser.add_argument("--gpu-memory-utilization", type=float, default=0.90)
+    parser.add_argument("--transcript-subdir", type=str, default="", help="Subfolder of transcripts/ holding the clarified files")
+    parser.add_argument("--importance-detectors", nargs="+", default=["LSTM", "GT", "ALL"], help="Importance names in the file names (e.g. the --run-name given to pipelinev4)")
+    parser.add_argument("--mistranscript-detectors", nargs="+", default=["RF", "GT", "ALL"])
+    parser.add_argument("--score-op", type=str, choices=["add", "multiply"], default="add")
+    parser.add_argument("--num-lines", nargs="+", default=["10", "20", "30", "40", "50"], help="Clarification sizes (N) to quiz")
 
     args, _ = parser.parse_known_args(args_list)
 
@@ -72,9 +77,10 @@ def run(args_list=None):
 
     # Configurations
     splits = ["validation"]
-    clarification_num_lines = ["10", "20", "30", "40", "50"]
-    importance_detectors = ["LSTM", "GT", "ALL"]
-    mistranscript_detectors = ["RF", "GT", "ALL"]
+    clarification_num_lines = args.num_lines
+    importance_detectors = args.importance_detectors
+    mistranscript_detectors = args.mistranscript_detectors
+    op_suffix = "_mul" if args.score_op == "multiply" else ""
 
     versions = ["4"]
 
@@ -86,7 +92,7 @@ def run(args_list=None):
                     for version in versions:
                         imp_det_lower = imp_det.lower()
                         mis_det_lower = mis_det.lower()
-                        transcript_file = f"custom_transcript_gt_segments_{mis_det_lower}_{imp_det_lower}_{clar_num_line}_clarify{version}"
+                        transcript_file = f"custom_transcript_gt_segments_{mis_det_lower}_{imp_det_lower}_{clar_num_line}{op_suffix}_clarify{version}"
                         configs.append({
                             "split": split,
                             "transcript_file": transcript_file
@@ -119,7 +125,7 @@ def run(args_list=None):
                 logger.info("Skipping Meeting EN2009d as its too big for the vLLM model!")
                 continue
                 
-            transcript_path = os.path.join(meeting_path, "transcripts", f"{transcript_file}.txt")
+            transcript_path = os.path.join(meeting_path, "transcripts", args.transcript_subdir, f"{transcript_file}.txt")
             quiz_path = os.path.join(meeting_path, "quiz", "vllm_quiz.json")
 
             # Open the transcript file
