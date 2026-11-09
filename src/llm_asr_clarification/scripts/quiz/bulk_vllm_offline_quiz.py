@@ -63,6 +63,7 @@ def run(args_list=None):
     parser.add_argument("--importance-detectors", nargs="+", default=["LSTM", "GT", "ALL"], help="Importance names in the file names (e.g. the --run-name given to pipelinev4)")
     parser.add_argument("--mistranscript-detectors", nargs="+", default=["RF", "GT", "ALL"])
     parser.add_argument("--score-op", type=str, choices=["add", "multiply"], default="add")
+    parser.add_argument("--transcript-base", type=str, default="custom_transcript_gt_segments", help="Transcript the clarified files were built from (start of their file names)")
     parser.add_argument("--num-lines", nargs="+", default=["10", "20", "30", "40", "50"], help="Clarification sizes (N) to quiz")
 
     args, _ = parser.parse_known_args(args_list)
@@ -92,7 +93,7 @@ def run(args_list=None):
                     for version in versions:
                         imp_det_lower = imp_det.lower()
                         mis_det_lower = mis_det.lower()
-                        transcript_file = f"custom_transcript_gt_segments_{mis_det_lower}_{imp_det_lower}_{clar_num_line}{op_suffix}_clarify{version}"
+                        transcript_file = f"{args.transcript_base}_{mis_det_lower}_{imp_det_lower}_{clar_num_line}{op_suffix}_clarify{version}"
                         configs.append({
                             "split": split,
                             "transcript_file": transcript_file
@@ -216,14 +217,16 @@ def run(args_list=None):
         for quiz_path, results in tqdm(answers_by_quiz.items(), desc="Saving Answers"):
             try:
                 lock = FileLock(f"{quiz_path}.lock")
-                with lock, open(quiz_path, "r", encoding="utf-8") as f:
-                    latest_quiz = json.loads(f.read())
-                    
-                for q_idx, answer_field, ans in results:
-                    latest_quiz[q_idx][answer_field] = ans
-                    
-                with lock, open(quiz_path, "w", encoding="utf-8") as f:
-                    f.write(json.dumps(latest_quiz, indent=4))
+                # Hold the lock across the read and the write, so parallel jobs can't overwrite each other's columns
+                with lock:
+                    with open(quiz_path, "r", encoding="utf-8") as f:
+                        latest_quiz = json.loads(f.read())
+
+                    for q_idx, answer_field, ans in results:
+                        latest_quiz[q_idx][answer_field] = ans
+
+                    with open(quiz_path, "w", encoding="utf-8") as f:
+                        f.write(json.dumps(latest_quiz, indent=4))
 
             except Exception as e:
                 logger.error(f"Failed writing {quiz_path}: {e}")
@@ -347,14 +350,16 @@ def run(args_list=None):
         for quiz_path, results in tqdm(scores_by_quiz.items(), desc="Saving Scores"):
             try:
                 lock = FileLock(f"{quiz_path}.lock")
-                with lock, open(quiz_path, "r", encoding="utf-8") as f:
-                    latest_quiz = json.loads(f.read())
-                    
-                for q_idx, score_field, s in results:
-                    latest_quiz[q_idx][score_field] = s
-                    
-                with lock, open(quiz_path, "w", encoding="utf-8") as f:
-                    f.write(json.dumps(latest_quiz, indent=4))
+                # Hold the lock across the read and the write, so parallel jobs can't overwrite each other's columns
+                with lock:
+                    with open(quiz_path, "r", encoding="utf-8") as f:
+                        latest_quiz = json.loads(f.read())
+
+                    for q_idx, score_field, s in results:
+                        latest_quiz[q_idx][score_field] = s
+
+                    with open(quiz_path, "w", encoding="utf-8") as f:
+                        f.write(json.dumps(latest_quiz, indent=4))
             except Exception as e:
                 logger.error(f"Failed writing {quiz_path}: {e}")
 

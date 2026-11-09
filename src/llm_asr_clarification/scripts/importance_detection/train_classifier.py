@@ -10,6 +10,7 @@ from torch.utils.data import Dataset, DataLoader
 from sklearn.metrics import roc_auc_score, average_precision_score
 from llm_asr_clarification.models.ImportanceLSTM import ImportanceLSTM
 from llm_asr_clarification import get_logger
+from llm_asr_clarification.metrics import top_k_precision
 import ipdb
 
 # ┌───────────────────────────────────────────────┐
@@ -21,6 +22,9 @@ class ImportanceDataset(Dataset):
         self.contexts = data["context_embs"]
         self.targets = data["target_embs"]
         self.labels = data["labels"]
+        # Needed for top-k precision; older datasets don't have them
+        self.meetings = data.get("meetings")
+        self.line_idxs = data.get("line_idxs")
 
     def __len__(self):
         return len(self.labels)
@@ -39,6 +43,10 @@ def get_metrics(y_true, y_score):
     roc_auc = roc_auc_score(y_true, y_score)
     pr_auc = average_precision_score(y_true, y_score)
     return roc_auc, pr_auc
+
+
+def format_top_k(top_k):
+    return " | ".join(f"P@{k}: {v['mean']:.4f}" for k, v in top_k.items())
 
 
 # Driver Code
@@ -88,6 +96,8 @@ def run(args_list=None):
 
     val_dataset = ImportanceDataset(DATASET_PATH / "validation.pt")
     val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
+    if val_dataset.meetings is None:
+        logger.warning("Validation dataset has no meeting names, so top-k precision will be skipped.")
 
     # Calculate pos_weight for imbalanced dataset
     num_pos = torch.sum(train_dataset.labels == 1).item()
@@ -111,6 +121,7 @@ def run(args_list=None):
     best_val_loss = float('inf')
     best_val_probs = None
     best_val_labels = None
+    best_top_k = None
     training_stats = []
 
     
@@ -196,13 +207,22 @@ def run(args_list=None):
         
         logger.info(f"Epoch {epoch+1}/{args.epochs} - Val Loss: {avg_val_loss:.4f} | ROC-AUC: {roc_auc:.4f} | PR-AUC: {pr_auc:.4f}")
 
-        training_stats.append({
+        epoch_stats = {
             "epoch": epoch + 1,
             "train_loss": round(avg_train_loss, 4),
             "val_loss": round(avg_val_loss, 4),
             "roc_auc": round(roc_auc, 4),
             "pr_auc": round(pr_auc, 4)
-        })
+        }
+
+        top_k = None
+        if val_dataset.meetings is not None:
+            top_k = top_k_precision(all_labels, all_probs, val_dataset.meetings)
+            logger.info(f"Epoch {epoch+1}/{args.epochs} - {format_top_k(top_k)}")
+            for k, v in top_k.items():
+                epoch_stats[f"precision_at_{k}"] = round(v["mean"], 4)
+
+        training_stats.append(epoch_stats)
         
 
         # Save Best Model and its predictions
@@ -210,6 +230,7 @@ def run(args_list=None):
             best_val_loss = avg_val_loss
             best_val_probs = all_probs
             best_val_labels = all_labels
+            best_top_k = top_k
             best_ckpt_path = OUT_DIR / "importance_lstm.pt"
             torch.save(model.state_dict(), best_ckpt_path)
             logger.info(f"Validation loss improved to {best_val_loss:.4f}. Saved best model to {best_ckpt_path}")
@@ -222,12 +243,19 @@ def run(args_list=None):
     df.to_csv(csv_path, index=False)
     logger.info(f"Saved training statistics to {csv_path}")
 
+    if best_top_k is not None:
+        baseline = next(iter(best_top_k.values()))["baseline"]
+        summary = "\n".join(f"|---> k={k}: {v['mean']:.4f} (std across meetings {v['std']:.4f})" for k, v in best_top_k.items())
+        logger.info(f"Best epoch top-k precision (random picks: {baseline:.4f}):\n{summary}")
+
     # Save validation predictions from best epoch for plotting ROC/PR curves
     if best_val_probs is not None:
         preds_path = OUT_DIR / "val_predictions.pt"
         torch.save({
             "labels": np.array(best_val_labels),
-            "probs": np.array(best_val_probs)
+            "probs": np.array(best_val_probs),
+            "meetings": val_dataset.meetings,
+            "line_idxs": val_dataset.line_idxs,
         }, preds_path)
         logger.info(f"Saved best-epoch validation predictions to {preds_path}")
 

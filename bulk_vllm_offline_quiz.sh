@@ -73,18 +73,34 @@ echo "Starting vLLM Offline Bulk Pipeline..."
 #     --importance-detectors oracleswap oracleswapstd oraclemask \
 #     --mistranscript-detectors ALL
 
-# LLM line labels: N=50 clarifies every cited line (no meeting has more than 50)
+# LLM line labels: N=50 clarifies every cited line (already finished)
+# python -u -m run_scripts --scripts quiz.bulk_vllm_offline_quiz \
+#     --answering-model "Qwen/Qwen3-32B-FP8" \
+#     --scoring-model "Qwen/Qwen3-32B-FP8" \
+#     --transcript-subdir oracle-labels \
+#     --importance-detectors oracleattr \
+#     --mistranscript-detectors ALL \
+#     --num-lines 50
+
+# GT mistranscription + masked-label importance model
 python -u -m run_scripts --scripts quiz.bulk_vllm_offline_quiz \
-<<<<<<< HEAD
     --answering-model "Qwen/Qwen3-32B-FP8" \
     --scoring-model "Qwen/Qwen3-32B-FP8" \
-    --transcript-subdir oracle-labels \
-    --importance-detectors oracleattr \
-    --mistranscript-detectors ALL \
-    --num-lines 50
-=======
-    --answering-model "Qwen/Qwen3-4B" \
-    --scoring-model "Qwen/Qwen3-8B"
->>>>>>> main
+    --transcript-subdir rf-mis_lstmmask-imp \
+    --importance-detectors lstmmask \
+    --mistranscript-detectors GT
+
+# Full and partial noise transcripts. The saved scores came from nvidia/Qwen3-32B-NVFP4, so rerun them with the current model.
+python -u -m run_scripts --scripts quiz.single_vllm_offline_quiz \
+    --ami-path ./shared/datasets/amicorpus/validation \
+    --transcript-file custom_transcript_gt_segments_noise \
+    --answering-model Qwen/Qwen3-32B-FP8 \
+    --scoring-model Qwen/Qwen3-32B-FP8
+
+python -u -m run_scripts --scripts quiz.single_vllm_offline_quiz \
+    --ami-path ./shared/datasets/amicorpus/validation \
+    --transcript-file custom_transcript_gt_segments_partial_noise \
+    --answering-model Qwen/Qwen3-32B-FP8 \
+    --scoring-model Qwen/Qwen3-32B-FP8
 
 echo "Pipeline completed."

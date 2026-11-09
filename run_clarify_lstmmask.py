@@ -15,9 +15,11 @@ NUM_LINES = [10, 20, 30, 40, 50]
 # (mistranscription detector, how to combine its score with the importance score)
 # ALL has no multiply run: its score is always 1, so both ops rank lines the same way.
 DETECTOR_CONFIGS = [
-    ("ALL", "add"),
-    ("RF", "add"),
-    ("RF", "multiply"),
+    # Already finished
+    # ("ALL", "add"),
+    # ("RF", "add"),
+    # ("RF", "multiply"),
+    ("GT", "add"),
 ]
 
 runs = [(num_lines, detector, op) for num_lines in NUM_LINES for detector, op in DETECTOR_CONFIGS]

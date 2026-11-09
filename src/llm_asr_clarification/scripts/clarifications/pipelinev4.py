@@ -63,6 +63,8 @@ def run(args_list=None):
     parser.add_argument("--num_lines", type=int, default=20)
     parser.add_argument("--seed", type=int, default=47)
     parser.add_argument("--importance-model-path", type=str, default=None, help="Weights for the LSTM importance detector (default: the detector's built-in path)")
+    parser.add_argument("--mistranscription-model-path", type=str, default=None, help="Weights for the RF mistranscription detector (default: the detector's built-in path)")
+    parser.add_argument("--beam-file", type=str, default="beam_results", help="Beam results file the mistranscription detector reads, without .json. Must match --clarify-file, e.g. beam_results_noise")
     parser.add_argument("--run-name", type=str, default=None, help="Replaces the importance detector name in output file names, e.g. lstmmask")
     parser.add_argument("--score-op", type=str, choices=["add", "multiply"], default="add", help="How to combine mistranscription and importance confidences")
     parser.add_argument("--output-subdir", type=str, default="", help="Subfolder of transcripts/ for the clarified files")
@@ -97,7 +99,10 @@ def run(args_list=None):
     meeting_folders = [f for f in DATASET_PATH.iterdir() if f.is_dir()]
 
     def get_mis_detector(detector_name, meeting_folder):
-        return MIS_CLS_MAP[detector_name](meeting_path=meeting_folder)
+        kwargs = {"meeting_path": meeting_folder, "beam_file": args.beam_file}
+        if args.mistranscription_model_path:
+            kwargs["model_path"] = args.mistranscription_model_path
+        return MIS_CLS_MAP[detector_name](**kwargs)
         
     def get_imp_detector(detector_name, meeting_folder, transcript_file):
         kwargs = {"meeting_path": meeting_folder, "transcript_file": transcript_file}
