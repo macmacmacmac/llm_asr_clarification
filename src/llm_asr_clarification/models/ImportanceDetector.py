@@ -156,3 +156,40 @@ class LSTMImportanceDetector(ImportanceDetector):
             self._confs = []
             return preds, confs
         return preds
+
+
+class OracleMaskImportanceDetector(ImportanceDetector):
+    """
+    Oracle importance from the saved mask labels (the labels LSTM_MASK is trained on): how much the
+    answer log-prob drops when the GT line is hidden, std-scaled per question, best question per line.
+    Same score as `oraclemask` in scripts/clarifications/oracle_label_clarify.py. Uses the quiz answers,
+    so it is an upper bound, not a deployable method.
+
+    `model_path` is the label file (kept as model_path so --importance-model-path can override it).
+    """
+    _label_cache = {}
+
+    def __init__(self, **kwargs):
+        defaults = {
+            'meeting_path': "./shared/datasets/amicorpus/validation/ES2011a/",
+            'model_path': './shared/datasets/logp_mask_deltas/validation_32b_mask.pt',
+            'tau': 0.05,
+        }
+        params = {**defaults, **kwargs}
+        labels_path = params['model_path']
+        if labels_path not in self._label_cache:
+            self._label_cache[labels_path] = torch.load(labels_path, map_location="cpu")
+
+        # logps: [N+1, Q]; row 0 = full GT transcript, row j+1 = GT line j masked
+        logps = self._label_cache[labels_path][os.path.basename(os.path.normpath(params['meeting_path']))]["logps"].double()
+        drop = logps[0:1] - logps[1:]
+        self.scores = (drop / drop.std(dim=0).clamp(min=params['tau'])).max(dim=1).values.tolist()
+
+    def get_important_lines(self, line_numbers: list[int], return_conf: bool = False):
+        if max(line_numbers) >= len(self.scores):
+            raise ValueError(f"Transcript has more lines than the mask labels ({len(self.scores)})")
+        confs = [self.scores[i] for i in line_numbers]
+        preds = [c > 0 for c in confs]
+        if return_conf:
+            return preds, confs
+        return preds

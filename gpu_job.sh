@@ -7,6 +7,6 @@
 #SBATCH -p short                
 #SBATCH -t 60          
 #SBATCH --gres=gpu:1            
-#SBATCH -C "A100"
+#SBATCH -C "L40S"
 
 srun --unbuffered python -m run_scripts "$@"

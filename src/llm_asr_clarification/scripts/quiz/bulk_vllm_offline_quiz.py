@@ -65,6 +65,7 @@ def run(args_list=None):
     parser.add_argument("--score-op", type=str, choices=["add", "multiply"], default="add")
     parser.add_argument("--transcript-base", type=str, default="custom_transcript_gt_segments", help="Transcript the clarified files were built from (start of their file names)")
     parser.add_argument("--num-lines", nargs="+", default=["10", "20", "30", "40", "50"], help="Clarification sizes (N) to quiz")
+    parser.add_argument("--diversity-weights", nargs="+", type=float, default=[0.0], help="Diversity weights (w) given to pipelinev4 --diversity-weight. 0 means no diversity suffix")
 
     args, _ = parser.parse_known_args(args_list)
 
@@ -90,14 +91,17 @@ def run(args_list=None):
         for clar_num_line in clarification_num_lines:
             for imp_det in importance_detectors:
                 for mis_det in mistranscript_detectors:
-                    for version in versions:
-                        imp_det_lower = imp_det.lower()
-                        mis_det_lower = mis_det.lower()
-                        transcript_file = f"{args.transcript_base}_{mis_det_lower}_{imp_det_lower}_{clar_num_line}{op_suffix}_clarify{version}"
-                        configs.append({
-                            "split": split,
-                            "transcript_file": transcript_file
-                        })
+                    for div_weight in args.diversity_weights:
+                        for version in versions:
+                            imp_det_lower = imp_det.lower()
+                            mis_det_lower = mis_det.lower()
+                            # Must match diversity_suffix() in clarifications/pipelinev4.py
+                            div_suffix = "" if div_weight == 0 else f"_div{div_weight:g}"
+                            transcript_file = f"{args.transcript_base}_{mis_det_lower}_{imp_det_lower}_{clar_num_line}{op_suffix}{div_suffix}_clarify{version}"
+                            configs.append({
+                                "split": split,
+                                "transcript_file": transcript_file
+                            })
     
     logger.info(f"Total configurations to process: {len(configs)}")
     

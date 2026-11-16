@@ -7,8 +7,9 @@ name = "llm_asr_clarification"
 version = "0.1.0"
 description = "LLM ASR clarification thing"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.10,<3.14"
 dependencies = [
+    "audiojev-inference",
     "dotenv>=0.9.9",
     "ipdb>=0.13.13",
     "ipykernel>=7.3.0",
@@ -26,6 +27,7 @@ dependencies = [
     "statsmodels>=0.14.6",
     "torch>=2.11.0",
     "torchaudio>=2.11.0",
+    "torchvision>=0.26.0",
     "transformers>=4.57.6",
 ]
 
@@ -38,3 +40,15 @@ explicit = true
 torch = [{ index = "pytorch-cu128" }]
 torchvision = [{ index = "pytorch-cu128" }]
 torchaudio = [{ index = "pytorch-cu128" }]
+audiojev-inference = { git = "https://github.com/SihanLv/AudioJev-Inference.git" }
+
+[tool.uv]
+# 1. Override audiojev-inference's strict torch<2.9 pin so it uses your torch>=2.11.0
+override-dependencies = [
+    "torch>=2.11.0",
+    "torchaudio>=2.11.0",
+    # audiojev pins torchvision 0.23 (built for torch 2.8) which leads to following error "operator torchvision::nms does not exist"
+    "torchvision>=0.26.0",
+]
+# 2. Restrict resolution to Linux x86_64 so uv doesn't fail on win32 / Python 3.14 splits
+environments = ["sys_platform == 'linux'"]
